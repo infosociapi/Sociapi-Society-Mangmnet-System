@@ -1,8 +1,8 @@
 import type { Role } from "../types";
 
 // The ONE and ONLY Super Admin. Hardcoded so no one else can become Super Admin.
-export const SUPER_ADMIN_EMAIL = "muhammad.zuhair.zeb@sociapi.org";
-export const SUPER_ADMIN_USERNAME = "muhammad.zuhair.zeb";
+export const SUPER_ADMIN_EMAIL = "zezuhair71@gmail.com";
+export const SUPER_ADMIN_USERNAME = "Muhammad Zuhair Zeb";
 
 export type Section =
   | "me"
