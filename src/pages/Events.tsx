@@ -30,9 +30,15 @@ export default function Events() {
   const [form, setForm] = useState<Partial<Event>>(empty());
   const canManage = hasPermission("manage_events");
 
-  const upcoming = events.filter((e) => e.status === "Upcoming");
-  const past = events.filter((e) => e.status === "Completed");
+  const startOfToday = new Date();
+  startOfToday.setHours(0, 0, 0, 0);
+  const isPastDate = (e: Event) => new Date(e.date) < startOfToday;
+
   const archived = events.filter((e) => e.status === "Archived");
+  // Past = explicitly Completed OR any non-archived event whose date has passed.
+  const past = events.filter((e) => e.status !== "Archived" && (e.status === "Completed" || isPastDate(e)));
+  // Upcoming = non-archived future events that are not already in past.
+  const upcoming = events.filter((e) => e.status !== "Archived" && !isPastDate(e) && e.status !== "Completed");
 
   const totals = useMemo(() => {
     const budget = events.reduce((s, e) => s + (e.budget || 0), 0);

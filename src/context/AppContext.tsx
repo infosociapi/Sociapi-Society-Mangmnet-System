@@ -27,7 +27,26 @@ import {
   seedTemplates,
   seedUsers,
 } from "../data/seed";
-import { callSupabaseAdmin, clearChatThread, deleteChatMessage, deleteMemberRow, ensureMember, insertChatMessage, loadChats, loadErpState, loadMembers, saveErpState } from "../lib/supabaseStore";
+import {
+  callSupabaseAdmin,
+  clearChatThread,
+  deleteChatMessage,
+  deleteEventRow,
+  deleteFinanceRow,
+  deleteMemberRow,
+  ensureMember,
+  insertChatMessage,
+  insertEvent,
+  insertFinance,
+  loadChats,
+  loadErpState,
+  loadEvents,
+  loadFinance,
+  loadMembers,
+  saveErpState,
+  updateEventRow,
+  updateFinanceRow,
+} from "../lib/supabaseStore";
 import { isSupabaseConfigured, supabase, supabaseConfigMessage } from "../lib/supabase";
 
 interface AppState {
@@ -205,12 +224,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
     let active = true;
     const tick = async () => {
       try {
-        const [members, chats] = await Promise.all([loadMembers(), loadChats()]);
+        const [members, chats, events, finance] = await Promise.all([loadMembers(), loadChats(), loadEvents(), loadFinance()]);
         if (!active) return;
         setState((s) => ({
           ...s,
           users: members.length ? members : s.users,
           chats,
+          events,
+          finance,
         }));
       } catch (error) {
         console.error("Live sync failed", error);
@@ -588,43 +609,65 @@ export function AppProvider({ children }: { children: ReactNode }) {
     _log(currentUser, `Deleted task`, "tasks", id);
   };
 
+  const refreshEvents = () => loadEvents().then((events) => setState((s) => ({ ...s, events }))).catch((e) => console.error(e));
+  const refreshFinance = () => loadFinance().then((finance) => setState((s) => ({ ...s, finance }))).catch((e) => console.error(e));
+
   const addEvent: AppState["addEvent"] = (e) => {
     const newE: Event = { ...e, id: "e" + Date.now() };
     setState((s) => ({ ...s, events: [...s.events, newE] }));
+    insertEvent(newE).then(refreshEvents).catch((err) => console.error("Event create failed", err));
     _log(currentUser, `Created event "${newE.title}"`, "events", newE.id);
   };
   const updateEvent: AppState["updateEvent"] = (id, patch) => {
-    setState((s) => ({ ...s, events: s.events.map((e) => (e.id === id ? { ...e, ...patch } : e)) }));
+    let updated: Event | undefined;
+    setState((s) => {
+      const events = s.events.map((e) => (e.id === id ? ((updated = { ...e, ...patch }), updated) : e));
+      return { ...s, events };
+    });
+    if (updated) updateEventRow(id, updated).then(refreshEvents).catch((err) => console.error("Event update failed", err));
     _log(currentUser, `Updated event`, "events", id);
   };
   const deleteEvent: AppState["deleteEvent"] = (id) => {
     setState((s) => ({ ...s, events: s.events.filter((e) => e.id !== id) }));
+    deleteEventRow(id).then(refreshEvents).catch((err) => console.error("Event delete failed", err));
     _log(currentUser, `Deleted event`, "events", id);
   };
   const duplicateEvent: AppState["duplicateEvent"] = (id) => {
-    setState((s) => {
-      const e = s.events.find((x) => x.id === id);
-      if (!e) return s;
-      const dup: Event = { ...e, id: "e" + Date.now(), title: e.title + " (Copy)", status: "Upcoming", attended: 0, registered: 0, feedback: [], expense: 0, income: 0 };
-      return { ...s, events: [...s.events, dup] };
-    });
+    const e = state.events.find((x) => x.id === id);
+    if (!e) return;
+    const dup: Event = { ...e, id: "e" + Date.now(), title: e.title + " (Copy)", status: "Upcoming", attended: 0, registered: 0, feedback: [], expense: 0, income: 0 };
+    setState((s) => ({ ...s, events: [...s.events, dup] }));
+    insertEvent(dup).then(refreshEvents).catch((err) => console.error("Event duplicate failed", err));
     _log(currentUser, `Duplicated event`, "events", id);
   };
   const archiveEvent: AppState["archiveEvent"] = (id) => {
-    setState((s) => ({ ...s, events: s.events.map((e) => (e.id === id ? { ...e, status: "Archived" } : e)) }));
+    let updated: Event | undefined;
+    setState((s) => {
+      const events = s.events.map((e) => (e.id === id ? ((updated = { ...e, status: "Archived" as const }), updated) : e));
+      return { ...s, events };
+    });
+    if (updated) updateEventRow(id, updated).then(refreshEvents).catch((err) => console.error("Event archive failed", err));
     _log(currentUser, `Archived event`, "events", id);
   };
 
   const addFinance: AppState["addFinance"] = (f) => {
-    setState((s) => ({ ...s, finance: [{ ...f, id: "f" + Date.now() }, ...s.finance] }));
+    const newF: FinanceEntry = { ...f, id: "f" + Date.now() };
+    setState((s) => ({ ...s, finance: [newF, ...s.finance] }));
+    insertFinance(newF).then(refreshFinance).catch((err) => console.error("Finance create failed", err));
     _log(currentUser, `Added finance entry: ${f.type} PKR ${f.amount}`, "finance");
   };
   const updateFinance: AppState["updateFinance"] = (id, patch) => {
-    setState((s) => ({ ...s, finance: s.finance.map((f) => (f.id === id ? { ...f, ...patch } : f)) }));
+    let updated: FinanceEntry | undefined;
+    setState((s) => {
+      const finance = s.finance.map((f) => (f.id === id ? ((updated = { ...f, ...patch }), updated) : f));
+      return { ...s, finance };
+    });
+    if (updated) updateFinanceRow(id, updated).then(refreshFinance).catch((err) => console.error("Finance update failed", err));
     _log(currentUser, `Edited finance entry`, "finance", id);
   };
   const deleteFinance: AppState["deleteFinance"] = (id) => {
     setState((s) => ({ ...s, finance: s.finance.filter((f) => f.id !== id) }));
+    deleteFinanceRow(id).then(refreshFinance).catch((err) => console.error("Finance delete failed", err));
     _log(currentUser, `Deleted finance entry`, "finance", id);
   };
 

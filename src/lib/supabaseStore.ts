@@ -111,18 +111,128 @@ export async function loadErpState(): Promise<ErpStateSnapshot | null> {
   };
 }
 
+// NOTE: events & finance are NOT bulk-saved here anymore (that caused duplicate
+// rows on every state change). They use direct insert/update/delete below.
 export async function saveErpState(data: ErpStateSnapshot): Promise<void> {
   if (!isSupabaseConfigured) return;
-  const departments = data.departments.map((d) => ({ ...(isUuid(d.id) ? { id: d.id } : {}), name: d.name, description: d.description, lead_id: isUuid(d.leadId) ? d.leadId : null }));
-  if (departments.length) await supabase.from("departments").upsert(departments, { onConflict: "name" });
+  // Only members are upserted in bulk, and email is unique so no duplicates can occur.
   const { data: dbDeps } = await supabase.from("departments").select("id,name");
   const depId = (name: string) => (dbDeps || []).find((d: any) => d.name === name)?.id || null;
-  const members = data.users.map((u) => ({ ...(isUuid(u.id) ? { id: u.id } : {}), username: u.username, member_id: u.memberId, special_number: u.specialNumber, name: u.name, email: u.email, phone: u.phone || null, role: u.role, department_id: depId(u.department), position: u.position, join_date: u.joinDate, attendance: u.attendance, points: u.points, performance_score: u.performanceScore, status: u.status, created_by: isUuid(u.createdBy) ? u.createdBy : null, created_at: u.createdAt || new Date().toISOString(), last_login: u.lastLogin || null }));
-  if (members.length) await supabase.from("members").upsert(members, { onConflict: "email" });
-  const events = data.events.map((e) => ({ ...(isUuid(e.id) ? { id: e.id } : {}), title: e.title, description: e.description, event_date: e.date, venue: e.location, capacity: e.capacity, registered: e.registered, attended: e.attended, status: e.status, budget: e.budget, expense: e.expense, income: e.income }));
-  if (events.length) await supabase.from("events").upsert(events);
-  const finance = data.finance.map((f) => ({ ...(isUuid(f.id) ? { id: f.id } : {}), type: f.type, amount: f.amount, description: f.description, category: f.category, event_id: isUuid(f.eventId) ? f.eventId : null, entry_date: f.date }));
-  if (finance.length) await supabase.from("finance_entries").upsert(finance);
+  const members = data.users
+    .filter((u) => isUuid(u.id))
+    .map((u) => ({
+      id: u.id,
+      username: u.username,
+      member_id: u.memberId,
+      special_number: u.specialNumber,
+      name: u.name,
+      email: u.email,
+      phone: u.phone || null,
+      role: u.role,
+      department_id: depId(u.department),
+      position: u.position,
+      attendance: u.attendance,
+      points: u.points,
+      performance_score: u.performanceScore,
+      status: u.status,
+      last_login: u.lastLogin || null,
+    }));
+  if (members.length) await supabase.from("members").upsert(members, { onConflict: "id" });
+}
+
+/* ===================== EVENTS (direct CRUD) ===================== */
+function eventRow(e: Event) {
+  return {
+    title: e.title,
+    description: e.description,
+    event_date: e.date,
+    venue: e.location,
+    capacity: e.capacity,
+    registered: e.registered,
+    attended: e.attended,
+    status: e.status,
+    budget: e.budget,
+    expense: e.expense,
+    income: e.income,
+  };
+}
+export async function insertEvent(e: Event): Promise<string | null> {
+  if (!isSupabaseConfigured) return null;
+  const { data, error } = await supabase.from("events").insert(eventRow(e)).select("id").maybeSingle();
+  if (error) throw error;
+  return data?.id || null;
+}
+export async function updateEventRow(id: string, e: Event) {
+  if (!isSupabaseConfigured || !isUuid(id)) return;
+  const { error } = await supabase.from("events").update(eventRow(e)).eq("id", id);
+  if (error) throw error;
+}
+export async function deleteEventRow(id: string) {
+  if (!isSupabaseConfigured || !isUuid(id)) return;
+  const { error } = await supabase.from("events").delete().eq("id", id);
+  if (error) throw error;
+}
+export async function loadEvents(): Promise<Event[]> {
+  if (!isSupabaseConfigured) return [];
+  const { data, error } = await supabase.from("events").select("*").order("event_date", { ascending: true });
+  if (error) throw error;
+  return (data || []).map((e: any) => ({
+    id: e.id,
+    title: e.title,
+    description: e.description,
+    date: e.event_date,
+    location: e.venue,
+    capacity: e.capacity,
+    registered: e.registered,
+    attended: e.attended,
+    status: e.status,
+    feedback: [],
+    budget: Number(e.budget),
+    expense: Number(e.expense),
+    income: Number(e.income),
+  }));
+}
+
+/* ===================== FINANCE (direct CRUD) ===================== */
+function financeRow(f: FinanceEntry) {
+  return {
+    type: f.type,
+    amount: f.amount,
+    description: f.description,
+    category: f.category,
+    event_id: isUuid(f.eventId) ? f.eventId : null,
+    entry_date: f.date,
+  };
+}
+export async function insertFinance(f: FinanceEntry): Promise<string | null> {
+  if (!isSupabaseConfigured) return null;
+  const { data, error } = await supabase.from("finance_entries").insert(financeRow(f)).select("id").maybeSingle();
+  if (error) throw error;
+  return data?.id || null;
+}
+export async function updateFinanceRow(id: string, f: FinanceEntry) {
+  if (!isSupabaseConfigured || !isUuid(id)) return;
+  const { error } = await supabase.from("finance_entries").update(financeRow(f)).eq("id", id);
+  if (error) throw error;
+}
+export async function deleteFinanceRow(id: string) {
+  if (!isSupabaseConfigured || !isUuid(id)) return;
+  const { error } = await supabase.from("finance_entries").delete().eq("id", id);
+  if (error) throw error;
+}
+export async function loadFinance(): Promise<FinanceEntry[]> {
+  if (!isSupabaseConfigured) return [];
+  const { data, error } = await supabase.from("finance_entries").select("*").order("entry_date", { ascending: false });
+  if (error) throw error;
+  return (data || []).map((f: any) => ({
+    id: f.id,
+    type: f.type,
+    amount: Number(f.amount),
+    description: f.description,
+    category: f.category,
+    eventId: f.event_id || undefined,
+    date: f.entry_date,
+  }));
 }
 
 function isUuidLoose(id?: string) {
