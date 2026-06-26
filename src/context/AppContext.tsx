@@ -320,16 +320,26 @@ export function AppProvider({ children }: { children: ReactNode }) {
         phone: data.phone,
       };
       if (!isSupabaseConfigured) return { ok: false, error: "Supabase is not configured." };
-      try {
-        await callSupabaseAdmin("create", {
-          email: newUser.email,
-          password: data.password,
-          metadata: { username: newUser.username, role: newUser.role, memberId: newUser.memberId },
-        });
-        await supabase.auth.signInWithPassword({ email: newUser.email, password: data.password });
-      } catch (error) {
-        return { ok: false, error: error instanceof Error ? error.message : "Supabase account creation failed" };
+
+      // Client-side sign up works both locally and on Vercel (no serverless function needed).
+      const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
+        email: newUser.email,
+        password: data.password,
+        options: {
+          data: { username: newUser.username, role: newUser.role, memberId: newUser.memberId },
+        },
+      });
+      if (signUpError) return { ok: false, error: signUpError.message };
+
+      // If Supabase has "Confirm email" ON, there is no active session yet.
+      if (!signUpData.session) {
+        setState((s) => ({ ...s, users: [...s.users, newUser] }));
+        return {
+          ok: false,
+          error: "Account created, but email confirmation is required. Confirm the email in Supabase (or disable 'Confirm email' under Authentication → Providers) and then sign in.",
+        };
       }
+
       setState((s) => ({ ...s, users: [...s.users, newUser] }));
       setCurrentUser(newUser);
       _log(newUser, `Registered new account`, "auth");
@@ -396,12 +406,38 @@ export function AppProvider({ children }: { children: ReactNode }) {
       };
       if (isSupabaseConfigured) {
         const tempPassword = (u as any).temporaryPassword;
-        if (!tempPassword) throw new Error("temporaryPassword is required to create Supabase Auth user");
-        callSupabaseAdmin("create", {
-          email: newUser.email,
-          password: tempPassword,
-          metadata: { username: newUser.username, role: newUser.role, memberId: newUser.memberId },
-        }).catch((error) => console.error("Supabase Auth create failed", error));
+        if (!tempPassword) {
+          setTimeout(() => {
+            addNotification({
+              title: "Member added without login",
+              body: `${newUser.name} was added, but no temporary password was provided, so no Supabase Auth login was created.`,
+              channel: "In-App",
+              type: "warning",
+            });
+          }, 0);
+        } else {
+          callSupabaseAdmin("create", {
+            email: newUser.email,
+            password: tempPassword,
+            metadata: { username: newUser.username, role: newUser.role, memberId: newUser.memberId },
+          })
+            .then(() => {
+              addNotification({
+                title: "Login created",
+                body: `Supabase Auth login created for ${newUser.email}. They can sign in with the temporary password.`,
+                channel: "In-App",
+                type: "success",
+              });
+            })
+            .catch((error) => {
+              addNotification({
+                title: "Supabase Auth create FAILED",
+                body: `${error instanceof Error ? error.message : "Unknown error"}. Note: the admin function only runs on Vercel deployment, not on local 'npm run dev'.`,
+                channel: "In-App",
+                type: "alert",
+              });
+            });
+        }
       }
       _log(currentUser, `Added member ${newUser.name}`, "members", newUser.id);
       return { ...s, users: [...s.users, newUser] };
