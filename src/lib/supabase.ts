@@ -4,15 +4,18 @@ const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined;
 
 export const isSupabaseConfigured = Boolean(supabaseUrl && supabaseAnonKey);
+export const supabaseConfigMessage = isSupabaseConfigured
+  ? "Supabase is configured"
+  : "Missing Vite env vars: VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY. Add them to .env locally or Vercel Environment Variables, then rebuild.";
 
 export const supabase = createClient(
-  supabaseUrl || "https://peswoagwacbewbahpbgq.supabase.co",
-  supabaseAnonKey || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InBlc3dvYWd3YWNiZXdiYWhwYmdxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODI0NTEzODAsImV4cCI6MjA5ODAyNzM4MH0.YeJu8DNnHYA8HIjmi94lFjvbK9ErYPJiqSNfTbz4LAs",
+  supabaseUrl || "https://example.supabase.co",
+  supabaseAnonKey || "missing-anon-key",
   {
     auth: {
       persistSession: true,
       autoRefreshToken: true,
-      detectSessionInUrl: true,
+      detectSessionInUrl: false,
     },
   }
 );
