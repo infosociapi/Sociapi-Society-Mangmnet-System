@@ -28,7 +28,7 @@ import {
   seedUsers,
 } from "../data/seed";
 import { callSupabaseAdmin, loadErpState, saveErpState } from "../lib/supabaseStore";
-import { isSupabaseConfigured, supabase } from "../lib/supabase";
+import { isSupabaseConfigured, supabase, supabaseConfigMessage } from "../lib/supabase";
 
 interface AppState {
   users: User[];
@@ -228,7 +228,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const u = state.users.find((x) => x.email.toLowerCase() === email.toLowerCase() || x.username.toLowerCase() === email.toLowerCase());
       if (!u) return { ok: false, error: "No account found for that email." };
       if (u.status === "Suspended") return { ok: false, error: "This account is suspended. Contact the Super Admin." };
-      if (!isSupabaseConfigured) return { ok: false, error: "Supabase is not configured. Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY." };
+      if (!isSupabaseConfigured) return { ok: false, error: supabaseConfigMessage };
       const { error } = await supabase.auth.signInWithPassword({ email: u.email, password });
       if (error) return { ok: false, error: `Supabase Auth failed: ${error.message}` };
       setCurrentUser(u);
