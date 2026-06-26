@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Avatar, Badge, Button, Card, Input, Label, Modal, Select, Textarea } from "../components/ui";
 import { useApp } from "../context/AppContext";
 import type { Application } from "../types";
-import { CheckCircle2, FileText, Plus, UserPlus2, Users, Activity, ClipboardCheck, Building2 } from "lucide-react";
+import { CheckCircle2, FileText, Pencil, Plus, UserPlus2, Users, Activity, ClipboardCheck, Building2 } from "lucide-react";
 
 const stages: Application["stage"][] = ["Applied", "Screening", "Interview", "Evaluation", "Onboarding", "Hired", "Rejected"];
 const stageTone: Record<Application["stage"], any> = {
@@ -19,10 +19,22 @@ export default function HR() {
   const { applications, addApplication, updateApplication, hasPermission, users, tasks, attendance, departments } = useApp();
   const canManage = hasPermission("manage_hr");
   const [open, setOpen] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [viewing, setViewing] = useState<Application | null>(null);
   const [form, setForm] = useState<Partial<Application>>({
     name: "", email: "", phone: "", position: "", stage: "Applied", appliedAt: new Date().toISOString(), notes: "",
   });
+
+  const openCreate = () => {
+    setEditingId(null);
+    setForm({ name: "", email: "", phone: "", position: "", stage: "Applied", appliedAt: new Date().toISOString(), notes: "" });
+    setOpen(true);
+  };
+  const openEdit = (a: Application) => {
+    setEditingId(a.id);
+    setForm({ ...a });
+    setOpen(true);
+  };
 
   const stats = stages.reduce<Record<string, number>>((acc, s) => {
     acc[s] = applications.filter((a) => a.stage === s).length;
@@ -32,13 +44,21 @@ export default function HR() {
   const completedTasks = tasks.filter((t) => t.status === "Completed").length;
   const avgAttendance = users.length ? Math.round(users.reduce((sum, u) => sum + u.attendance, 0) / users.length) : 0;
 
-  const create = () => {
+  const save = () => {
     if (!form.name || !form.position) return;
-    addApplication({
-      name: form.name!, email: form.email!, phone: form.phone!, position: form.position!,
-      stage: form.stage as Application["stage"], appliedAt: new Date().toISOString(), notes: form.notes || "",
-    });
+    if (editingId) {
+      updateApplication(editingId, {
+        name: form.name, email: form.email, phone: form.phone, position: form.position,
+        stage: form.stage as Application["stage"], notes: form.notes || "", score: form.score,
+      });
+    } else {
+      addApplication({
+        name: form.name!, email: form.email!, phone: form.phone!, position: form.position!,
+        stage: form.stage as Application["stage"], appliedAt: new Date().toISOString(), notes: form.notes || "",
+      });
+    }
     setOpen(false);
+    setEditingId(null);
     setForm({ name: "", email: "", phone: "", position: "", stage: "Applied", appliedAt: new Date().toISOString(), notes: "" });
   };
 
@@ -49,7 +69,7 @@ export default function HR() {
           <h1 className="text-2xl font-bold tracking-tight">HR Module</h1>
           <p className="text-sm text-slate-500">Recruitment · Interviews · Evaluation · Onboarding</p>
         </div>
-        {canManage && <Button icon={<Plus className="h-4 w-4" />} onClick={() => setOpen(true)}>New Application</Button>}
+        {canManage && <Button icon={<Plus className="h-4 w-4" />} onClick={openCreate}>New Application</Button>}
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
@@ -129,6 +149,7 @@ export default function HR() {
             {a.notes && <p className="mt-2 text-sm line-clamp-2">{a.notes}</p>}
             <div className="mt-4 flex gap-2 flex-wrap">
               <Button size="sm" variant="outline" icon={<FileText className="h-3 w-3" />} onClick={() => setViewing(a)}>View</Button>
+              {canManage && <Button size="sm" variant="ghost" icon={<Pencil className="h-3 w-3" />} onClick={() => openEdit(a)}>Edit</Button>}
               {canManage && a.stage !== "Hired" && a.stage !== "Rejected" && (
                 <Select
                   value={a.stage}
@@ -143,17 +164,24 @@ export default function HR() {
         ))}
       </div>
 
-      <Modal open={open} onClose={() => setOpen(false)} title="New Application">
+      <Modal open={open} onClose={() => setOpen(false)} title={editingId ? "Edit Application" : "New Application"}>
         <div className="space-y-4">
           <div className="grid grid-cols-2 gap-3">
             <div><Label>Full Name</Label><Input value={form.name || ""} onChange={(e) => setForm({ ...form, name: e.target.value })} /></div>
             <div><Label>Position</Label><Input value={form.position || ""} onChange={(e) => setForm({ ...form, position: e.target.value })} /></div>
             <div><Label>Email</Label><Input value={form.email || ""} onChange={(e) => setForm({ ...form, email: e.target.value })} /></div>
             <div><Label>Phone</Label><Input value={form.phone || ""} onChange={(e) => setForm({ ...form, phone: e.target.value })} /></div>
+            <div>
+              <Label>Stage</Label>
+              <Select value={form.stage as string} onChange={(e) => setForm({ ...form, stage: e.target.value as Application["stage"] })}>
+                {stages.map((s) => <option key={s}>{s}</option>)}
+              </Select>
+            </div>
+            <div><Label>Score (0-100)</Label><Input type="number" value={form.score ?? ""} onChange={(e) => setForm({ ...form, score: e.target.value ? Number(e.target.value) : undefined })} /></div>
           </div>
           <div><Label>Notes</Label><Textarea value={form.notes || ""} onChange={(e) => setForm({ ...form, notes: e.target.value })} /></div>
         </div>
-        <div className="flex justify-end gap-2 mt-6"><Button variant="ghost" onClick={() => setOpen(false)}>Cancel</Button><Button icon={<UserPlus2 className="h-4 w-4" />} onClick={create}>Create</Button></div>
+        <div className="flex justify-end gap-2 mt-6"><Button variant="ghost" onClick={() => setOpen(false)}>Cancel</Button><Button icon={<UserPlus2 className="h-4 w-4" />} onClick={save}>{editingId ? "Save Changes" : "Create"}</Button></div>
       </Modal>
 
       <Modal open={!!viewing} onClose={() => setViewing(null)} title="Candidate Evaluation" size="lg">

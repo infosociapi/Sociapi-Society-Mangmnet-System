@@ -1,10 +1,10 @@
 import { useMemo, useState } from "react";
 import { Avatar, Badge, Button, Card, Input, Select } from "../components/ui";
 import { useApp } from "../context/AppContext";
-import { MessageCircle, Send } from "lucide-react";
+import { MessageCircle, Send, Trash2, X } from "lucide-react";
 
 export default function Chat() {
-  const { currentUser, users, chats, sendChat } = useApp();
+  const { currentUser, users, chats, sendChat, deleteChat, clearChat } = useApp();
   const [mode, setMode] = useState<"team" | "direct">("team");
   const [team, setTeam] = useState(currentUser?.department || "General");
   const [toId, setToId] = useState(users.find((u) => u.id !== currentUser?.id)?.id || "");
@@ -53,6 +53,17 @@ export default function Chat() {
           <MessageCircle className="h-4 w-4 text-blue-600" />
           <p className="font-semibold">{mode === "team" ? `${team} Team` : `Direct Message`}</p>
           <Badge tone="indigo">{visible.length}</Badge>
+          <div className="flex-1" />
+          {visible.length > 0 && (
+            <Button size="sm" variant="ghost" icon={<X className="h-3 w-3" />}
+              onClick={() => {
+                if (!confirm("Clear this entire conversation?")) return;
+                if (mode === "team") clearChat({ team });
+                else clearChat({ otherId: toId });
+              }}>
+              Clear Chat
+            </Button>
+          )}
         </div>
         <div className="flex-1 overflow-y-auto py-4 space-y-3">
           {visible.length === 0 && <p className="text-sm text-slate-500 text-center py-16">No messages yet. Start the conversation.</p>}
@@ -60,12 +71,21 @@ export default function Chat() {
             const sender = users.find((u) => u.id === m.fromId);
             const mine = m.fromId === currentUser.id;
             return (
-              <div key={m.id} className={`flex gap-2 ${mine ? "justify-end" : "justify-start"}`}>
+              <div key={m.id} className={`group flex items-center gap-2 ${mine ? "justify-end" : "justify-start"}`}>
                 {!mine && sender && <Avatar name={sender.name} gradient={sender.avatar} size={32} />}
                 <div className={`max-w-[75%] rounded-2xl px-4 py-2 ${mine ? "bg-blue-600 text-white" : "bg-slate-100 dark:bg-white/5"}`}>
                   <p className="text-sm">{m.body}</p>
                   <p className={`text-[10px] mt-1 ${mine ? "text-blue-100" : "text-slate-500"}`}>{sender?.name || "Member"} · {new Date(m.createdAt).toLocaleTimeString()}</p>
                 </div>
+                {(mine || currentUser.role === "Super Admin") && (
+                  <button
+                    onClick={() => deleteChat(m.id)}
+                    title="Delete message"
+                    className="opacity-0 group-hover:opacity-100 transition-opacity h-7 w-7 rounded-lg flex items-center justify-center text-rose-500 hover:bg-rose-500/10"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
+                )}
               </div>
             );
           })}

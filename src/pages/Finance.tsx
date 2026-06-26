@@ -78,6 +78,19 @@ export default function Finance() {
         {canManage && <Button icon={<Plus className="h-4 w-4" />} onClick={() => { setEditingId(null); setForm({ type: "Donation", amount: 0, description: "", date: new Date().toISOString().slice(0, 10), category: "Donations", eventId: "" }); setOpen(true); }}>Add Entry</Button>}
       </div>
 
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <Card className="p-5 soc-bg-teal text-white">
+          <p className="text-xs uppercase tracking-wider opacity-90">Total Amount Collected</p>
+          <p className="text-3xl font-bold mt-1">PKR {totals.income.toLocaleString()}</p>
+          <p className="text-xs opacity-90 mt-1">Donations + Sponsorships + Fees + Other Income</p>
+        </Card>
+        <Card className="p-5 soc-bg-rose text-white">
+          <p className="text-xs uppercase tracking-wider opacity-90">Total Expense</p>
+          <p className="text-3xl font-bold mt-1">PKR {totals.expense.toLocaleString()}</p>
+          <p className="text-xs opacity-90 mt-1">All recorded expenses</p>
+        </Card>
+      </div>
+
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <KpiF icon={<Wallet className="h-5 w-5" />} label="Balance" value={totals.balance} tone="indigo" />
         <KpiF icon={<TrendingUp className="h-5 w-5" />} label="Income" value={totals.income} tone="emerald" />

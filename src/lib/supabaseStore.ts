@@ -150,6 +150,32 @@ export async function insertChatMessage(msg: { fromId: string; toId?: string; te
   if (error) throw error;
 }
 
+export async function deleteMemberRow(id: string) {
+  if (!isSupabaseConfigured) return;
+  const { error } = await supabase.from("members").delete().eq("id", id);
+  if (error) throw error;
+}
+
+export async function deleteChatMessage(id: string) {
+  if (!isSupabaseConfigured) return;
+  const { error } = await supabase.from("chat").delete().eq("id", id);
+  if (error) throw error;
+}
+
+export async function clearChatThread(opts: { team?: string; a?: string; b?: string }) {
+  if (!isSupabaseConfigured) return;
+  if (opts.team) {
+    const { error } = await supabase.from("chat").delete().eq("team", opts.team);
+    if (error) throw error;
+    return;
+  }
+  if (opts.a && opts.b) {
+    // delete both directions of a DM thread
+    await supabase.from("chat").delete().eq("from_member_id", opts.a).eq("to_member_id", opts.b);
+    await supabase.from("chat").delete().eq("from_member_id", opts.b).eq("to_member_id", opts.a);
+  }
+}
+
 export async function loadChats(): Promise<ChatMessage[]> {
   if (!isSupabaseConfigured) return [];
   const { data, error } = await supabase.from("chat").select("*").order("created_at", { ascending: true });

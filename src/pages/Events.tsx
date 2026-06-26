@@ -46,15 +46,22 @@ export default function Events() {
 
   const save = () => {
     if (!form.title) return;
+    const eventDate = new Date(form.date as string);
+    const startOfToday = new Date();
+    startOfToday.setHours(0, 0, 0, 0);
+    // If the selected date is in the past, mark it Completed so it shows under Past Events.
+    const isPast = eventDate < startOfToday;
+    let status = (form.status as Event["status"]) || "Upcoming";
+    if (status !== "Archived") status = isPast ? "Completed" : "Upcoming";
     const payload = {
       title: form.title!,
       description: form.description || "",
-      date: new Date(form.date as string).toISOString(),
+      date: eventDate.toISOString(),
       location: form.location || "",
       capacity: Number(form.capacity || 0),
       registered: Number(form.registered || 0),
       attended: Number(form.attended || 0),
-      status: (form.status as Event["status"]) || "Upcoming",
+      status,
       feedback: form.feedback || [],
       budget: Number(form.budget || 0),
       expense: Number(form.expense || 0),

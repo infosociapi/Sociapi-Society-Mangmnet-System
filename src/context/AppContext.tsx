@@ -27,7 +27,7 @@ import {
   seedTemplates,
   seedUsers,
 } from "../data/seed";
-import { callSupabaseAdmin, ensureMember, insertChatMessage, loadChats, loadErpState, loadMembers, saveErpState } from "../lib/supabaseStore";
+import { callSupabaseAdmin, clearChatThread, deleteChatMessage, deleteMemberRow, ensureMember, insertChatMessage, loadChats, loadErpState, loadMembers, saveErpState } from "../lib/supabaseStore";
 import { isSupabaseConfigured, supabase, supabaseConfigMessage } from "../lib/supabase";
 
 interface AppState {
@@ -64,6 +64,8 @@ interface AppState {
   updateDepartment: (id: string, patch: Partial<Department>) => void;
   deleteDepartment: (id: string) => void;
   sendChat: (body: string, toId?: string, team?: string) => void;
+  deleteChat: (id: string) => void;
+  clearChat: (opts: { team?: string; otherId?: string }) => void;
 
   addTask: (t: Omit<Task, "id" | "createdAt" | "status">) => void;
   updateTask: (id: string, patch: Partial<Task>) => void;
@@ -472,7 +474,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
   };
   const deleteUser: AppState["deleteUser"] = (id) => {
     const user = state.users.find((u) => u.id === id);
-    if (isSupabaseConfigured && user) callSupabaseAdmin("delete", { email: user.email }).catch((error) => console.error("Supabase Auth delete failed", error));
+    // Remove from members table immediately so it disappears for everyone.
+    if (isSupabaseConfigured && user) {
+      deleteMemberRow(id).catch((error) => console.error("Member delete failed", error));
+      // Best-effort: also remove the Supabase Auth login (Vercel-only function).
+      callSupabaseAdmin("delete", { email: user.email }).catch(() => {});
+    }
     setState((s) => ({ ...s, users: s.users.filter((u) => u.id !== id) }));
     _log(currentUser, `Deleted member`, "members", id);
   };
@@ -512,6 +519,32 @@ export function AppProvider({ children }: { children: ReactNode }) {
       })
       .catch((error) => console.error("Chat send failed", error));
     _log(currentUser, `Sent chat message`, "comms", toId || team);
+  };
+  const deleteChat: AppState["deleteChat"] = (id) => {
+    setState((s) => ({ ...s, chats: s.chats.filter((c) => c.id !== id) }));
+    deleteChatMessage(id)
+      .then(async () => {
+        const chats = await loadChats();
+        setState((s) => ({ ...s, chats }));
+      })
+      .catch((error) => console.error("Chat delete failed", error));
+  };
+  const clearChat: AppState["clearChat"] = ({ team, otherId }) => {
+    if (!currentUser) return;
+    setState((s) => ({
+      ...s,
+      chats: s.chats.filter((c) => {
+        if (team) return c.team !== team;
+        if (otherId) return !((c.fromId === currentUser.id && c.toId === otherId) || (c.fromId === otherId && c.toId === currentUser.id));
+        return true;
+      }),
+    }));
+    clearChatThread({ team, a: currentUser.id, b: otherId })
+      .then(async () => {
+        const chats = await loadChats();
+        setState((s) => ({ ...s, chats }));
+      })
+      .catch((error) => console.error("Chat clear failed", error));
   };
 
   const addTask: AppState["addTask"] = (t) => {
@@ -698,6 +731,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       updateDepartment,
       deleteDepartment,
       sendChat,
+      deleteChat,
+      clearChat,
       addTask,
       updateTask,
       deleteTask,
