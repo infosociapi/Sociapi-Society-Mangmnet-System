@@ -125,6 +125,78 @@ export async function saveErpState(data: ErpStateSnapshot): Promise<void> {
   if (finance.length) await supabase.from("finance_entries").upsert(finance);
 }
 
+function isUuidLoose(id?: string) {
+  return !!id && /^[0-9a-f-]{32,36}$/i.test(id);
+}
+
+export async function insertChatMessage(msg: { fromId: string; toId?: string; team?: string; body: string }) {
+  if (!isSupabaseConfigured) return;
+  const row: any = {
+    from_member_id: isUuidLoose(msg.fromId) ? msg.fromId : null,
+    to_member_id: msg.toId && isUuidLoose(msg.toId) ? msg.toId : null,
+    team: msg.team || null,
+    body: msg.body,
+  };
+  if (!row.from_member_id) {
+    // Resolve sender member row by current session if id is not a uuid.
+    const { data } = await supabase.auth.getUser();
+    const email = data.user?.email;
+    if (email) {
+      const { data: m } = await supabase.from("members").select("id").eq("email", email).maybeSingle();
+      row.from_member_id = m?.id || null;
+    }
+  }
+  const { error } = await supabase.from("chat").insert(row);
+  if (error) throw error;
+}
+
+export async function loadChats(): Promise<ChatMessage[]> {
+  if (!isSupabaseConfigured) return [];
+  const { data, error } = await supabase.from("chat").select("*").order("created_at", { ascending: true });
+  if (error) throw error;
+  return (data || []).map((c: any) => ({
+    id: c.id,
+    fromId: c.from_member_id,
+    toId: c.to_member_id || undefined,
+    team: c.team || undefined,
+    body: c.body,
+    read: c.read,
+    createdAt: c.created_at,
+  }));
+}
+
+export async function loadMembers(): Promise<User[]> {
+  if (!isSupabaseConfigured) return [];
+  const [{ data: members }, { data: departments }] = await Promise.all([
+    supabase.from("members").select("*"),
+    supabase.from("departments").select("id,name"),
+  ]);
+  return (members || []).map((m: any) => ({
+    id: m.id,
+    username: m.username,
+    memberId: m.member_id,
+    specialNumber: m.special_number,
+    name: m.name,
+    email: m.email,
+    phone: m.phone || "",
+    role: m.role,
+    position: m.position,
+    department: (departments || []).find((d: any) => d.id === m.department_id)?.name || "General",
+    skills: [],
+    joinDate: m.join_date,
+    avatar: "teal",
+    points: m.points,
+    attendance: Number(m.attendance),
+    performanceScore: Number(m.performance_score),
+    status: m.status,
+    certificates: [],
+    activity: [],
+    createdBy: m.created_by || undefined,
+    createdAt: m.created_at,
+    lastLogin: m.last_login || undefined,
+  }));
+}
+
 export async function uploadToSupabaseStorage(path: string, file: File) {
   if (!isSupabaseConfigured) throw new Error("Supabase is not configured");
   const { error } = await supabase.storage.from(SUPABASE_STORAGE_BUCKET).upload(path, file, {

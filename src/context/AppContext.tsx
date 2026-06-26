@@ -27,7 +27,7 @@ import {
   seedTemplates,
   seedUsers,
 } from "../data/seed";
-import { callSupabaseAdmin, loadErpState, saveErpState } from "../lib/supabaseStore";
+import { callSupabaseAdmin, insertChatMessage, loadChats, loadErpState, loadMembers, saveErpState } from "../lib/supabaseStore";
 import { isSupabaseConfigured, supabase, supabaseConfigMessage } from "../lib/supabase";
 
 interface AppState {
@@ -195,6 +195,32 @@ export function AppProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (hydrated) saveErpState(state).catch((error) => console.error("Supabase save failed", error));
   }, [state, hydrated]);
+
+  // Live sync: every few seconds pull latest members + chats from Supabase so new
+  // accounts and messages appear for everyone without a manual refresh.
+  useEffect(() => {
+    if (!hydrated || !isSupabaseConfigured || !currentUser) return;
+    let active = true;
+    const tick = async () => {
+      try {
+        const [members, chats] = await Promise.all([loadMembers(), loadChats()]);
+        if (!active) return;
+        setState((s) => ({
+          ...s,
+          users: members.length ? members : s.users,
+          chats,
+        }));
+      } catch (error) {
+        console.error("Live sync failed", error);
+      }
+    };
+    const interval = setInterval(tick, 6000);
+    tick();
+    return () => {
+      active = false;
+      clearInterval(interval);
+    };
+  }, [hydrated, currentUser]);
 
   useEffect(() => {
     document.documentElement.classList.toggle("dark", theme === "dark");
@@ -481,6 +507,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (!currentUser || !body.trim()) return;
     const msg: ChatMessage = { id: "chat" + Date.now(), fromId: currentUser.id, toId, team, body, createdAt: new Date().toISOString(), read: false };
     setState((s) => ({ ...s, chats: [...s.chats, msg] }));
+    // Persist to Supabase so other members see it, then refresh from DB.
+    insertChatMessage({ fromId: currentUser.id, toId, team, body })
+      .then(async () => {
+        const chats = await loadChats();
+        setState((s) => ({ ...s, chats }));
+      })
+      .catch((error) => console.error("Chat send failed", error));
     _log(currentUser, `Sent chat message`, "comms", toId || team);
   };
 
