@@ -33,8 +33,10 @@ import { Logo } from "../components/Logo";
 import { useApp } from "../context/AppContext";
 import { Avatar, Badge } from "../components/ui";
 import { cn } from "../utils/cn";
+import { getAllowedSections, type Section } from "../lib/access";
 
 function NavGroup({ title, items, onNav }: { title: string; items: { to: string; label: string; icon: any }[]; onNav: () => void }) {
+  if (items.length === 0) return null;
   return (
     <div>
       <p className="px-3 mb-1.5 text-[10px] font-bold uppercase tracking-widest text-slate-400 dark:text-slate-500">{title}</p>
@@ -62,37 +64,37 @@ function NavGroup({ title, items, onNav }: { title: string; items: { to: string;
   );
 }
 
-const personalNav = [
-  { to: "/app/me", label: "My Dashboard", icon: Home },
-  { to: "/app/id-card", label: "My ID Card", icon: IdCard },
+const personalNav: { to: string; label: string; icon: any; section: Section }[] = [
+  { to: "/app/me", label: "My Dashboard", icon: Home, section: "me" },
+  { to: "/app/id-card", label: "My ID Card", icon: IdCard, section: "id-card" },
 ];
 
-const orgNav = [
-  { to: "/app/dashboard", label: "Org Dashboard", icon: LayoutDashboard },
-  { to: "/app/members", label: "Members", icon: Users },
-  { to: "/app/departments", label: "Departments", icon: Building2 },
-  { to: "/app/tasks", label: "Tasks", icon: CheckSquare },
-  { to: "/app/attendance", label: "Attendance", icon: ClipboardCheck },
-  { to: "/app/events", label: "Events", icon: CalendarDays },
-  { to: "/app/finance", label: "Finance", icon: DollarSign },
-  { to: "/app/hr", label: "HR", icon: Briefcase },
-  { to: "/app/outreach", label: "Outreach CRM", icon: Network },
-  { to: "/app/leaderboard", label: "Leaderboard", icon: Trophy },
-  { to: "/app/ai", label: "AI Command", icon: Sparkles },
-  { to: "/app/communications", label: "Communications", icon: MessageSquare },
-  { to: "/app/chat", label: "Team Chat", icon: MessagesSquare },
+const orgNav: { to: string; label: string; icon: any; section: Section }[] = [
+  { to: "/app/dashboard", label: "Org Dashboard", icon: LayoutDashboard, section: "dashboard" },
+  { to: "/app/members", label: "Members", icon: Users, section: "members" },
+  { to: "/app/departments", label: "Departments", icon: Building2, section: "departments" },
+  { to: "/app/tasks", label: "Tasks", icon: CheckSquare, section: "tasks" },
+  { to: "/app/attendance", label: "Attendance", icon: ClipboardCheck, section: "attendance" },
+  { to: "/app/events", label: "Events", icon: CalendarDays, section: "events" },
+  { to: "/app/finance", label: "Finance", icon: DollarSign, section: "finance" },
+  { to: "/app/hr", label: "HR", icon: Briefcase, section: "hr" },
+  { to: "/app/outreach", label: "Outreach CRM", icon: Network, section: "outreach" },
+  { to: "/app/leaderboard", label: "Leaderboard", icon: Trophy, section: "leaderboard" },
+  { to: "/app/ai", label: "AI Command", icon: Sparkles, section: "ai" },
+  { to: "/app/communications", label: "Communications", icon: MessageSquare, section: "communications" },
+  { to: "/app/chat", label: "Team Chat", icon: MessagesSquare, section: "chat" },
 ];
 
-const adminNav = [
-  { to: "/app/accounts", label: "Accounts", icon: UserCog },
-  { to: "/app/passwords", label: "Password Vault", icon: LockKeyhole },
-  { to: "/app/logs", label: "Activity Logs", icon: ScrollText },
-  { to: "/app/architecture", label: "System Blueprint", icon: ServerCog },
-  { to: "/app/settings", label: "Settings", icon: Settings },
+const adminNav: { to: string; label: string; icon: any; section: Section }[] = [
+  { to: "/app/accounts", label: "Accounts", icon: UserCog, section: "accounts" },
+  { to: "/app/passwords", label: "Password Vault", icon: LockKeyhole, section: "passwords" },
+  { to: "/app/logs", label: "Activity Logs", icon: ScrollText, section: "logs" },
+  { to: "/app/architecture", label: "System Blueprint", icon: ServerCog, section: "architecture" },
+  { to: "/app/settings", label: "Settings", icon: Settings, section: "settings" },
 ];
 
 export default function DashboardLayout() {
-  const { currentUser, theme, toggleTheme, logout, notifications, markAllRead, hasPermission, isSuperAdmin } = useApp();
+  const { currentUser, theme, toggleTheme, logout, notifications, markAllRead } = useApp();
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const [notifOpen, setNotifOpen] = useState(false);
@@ -104,16 +106,8 @@ export default function DashboardLayout() {
   };
 
   if (!currentUser) return null;
-  const allowed = (to: string) => {
-    if (isSuperAdmin()) return true;
-    if (["/app/me", "/app/id-card", "/app/chat", "/app/events", "/app/settings"].includes(to)) return true;
-    if (to === "/app/tasks") return currentUser.role === "General Member" || currentUser.role === "Department Lead" || hasPermission("manage_tasks");
-    if (to === "/app/members" || to === "/app/attendance" || to === "/app/hr") return hasPermission("manage_hr") || currentUser.role === "HR Manager";
-    if (to === "/app/finance") return currentUser.role === "Finance Manager";
-    if (to === "/app/outreach") return currentUser.role === "Outreach Manager";
-    if (to === "/app/ai" || to === "/app/communications" || to === "/app/dashboard" || to === "/app/departments" || to === "/app/logs" || to === "/app/accounts" || to === "/app/passwords" || to === "/app/architecture") return false;
-    return false;
-  };
+  const allowedSections = getAllowedSections(currentUser);
+  const filter = (items: { section: Section }[]) => items.filter((i) => allowedSections.has(i.section)) as any;
 
   return (
     <div className="min-h-screen app-bg flex">
@@ -132,9 +126,9 @@ export default function DashboardLayout() {
             </button>
           </div>
           <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-4">
-            <NavGroup title="Personal" items={personalNav.filter((i) => allowed(i.to))} onNav={() => setOpen(false)} />
-            <NavGroup title="Organization" items={orgNav.filter((i) => allowed(i.to))} onNav={() => setOpen(false)} />
-            <NavGroup title="Admin" items={adminNav.filter((i) => allowed(i.to))} onNav={() => setOpen(false)} />
+            <NavGroup title="Personal" items={filter(personalNav)} onNav={() => setOpen(false)} />
+            <NavGroup title="Organization" items={filter(orgNav)} onNav={() => setOpen(false)} />
+            <NavGroup title="Admin" items={filter(adminNav)} onNav={() => setOpen(false)} />
           </nav>
           <div className="p-3 border-t border-slate-200/60 dark:border-white/10">
             <div className="flex items-center gap-3 p-2 rounded-xl bg-slate-100/60 dark:bg-white/5">

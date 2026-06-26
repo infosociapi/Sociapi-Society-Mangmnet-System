@@ -105,7 +105,11 @@ export default function Members() {
               <Stat label="Attendance" value={`${u.attendance}%`} />
               <Stat label="Score" value={u.performanceScore} />
             </div>
-            {canManage && (
+            {canManage && u.role === "Super Admin" ? (
+              <div className="mt-4 px-3 py-2 rounded-lg bg-amber-500/10 text-amber-700 dark:text-amber-300 text-xs ring-1 ring-amber-500/20">
+                🔒 Super Admin account — protected. Cannot be edited, suspended or removed.
+              </div>
+            ) : canManage ? (
               <div className="mt-4 flex gap-2 flex-wrap">
                 <Button size="sm" variant="outline" icon={<Edit2 className="h-3 w-3" />} onClick={(e) => { e.stopPropagation(); openEdit(u); }}>Edit</Button>
                 <Button size="sm" variant="ghost" onClick={(e) => { e.stopPropagation(); suspendUser(u.id); }}>
@@ -126,7 +130,7 @@ export default function Members() {
                   Delete
                 </Button>
               </div>
-            )}
+            ) : null}
           </Card>
         ))}
       </div>

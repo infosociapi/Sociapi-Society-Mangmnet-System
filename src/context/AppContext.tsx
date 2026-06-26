@@ -48,6 +48,7 @@ import {
   updateFinanceRow,
 } from "../lib/supabaseStore";
 import { isSupabaseConfigured, supabase, supabaseConfigMessage } from "../lib/supabase";
+import { SUPER_ADMIN_EMAIL } from "../lib/access";
 
 interface AppState {
   users: User[];
@@ -291,19 +292,30 @@ export function AppProvider({ children }: { children: ReactNode }) {
       if (error) return { ok: false, error: `Supabase Auth failed: ${error.message}` };
 
       const authEmail = data.user?.email || loginEmail;
-      const isFirstUser = !local; // very first migration user becomes Super Admin
+      // ONLY the hardcoded Super Admin email can be Super Admin.
+      const isSuper = authEmail.toLowerCase() === SUPER_ADMIN_EMAIL;
 
       // Ensure a canonical row exists in the Supabase `members` table and use its real id.
-      const profile = await ensureMember({
+      let profile = await ensureMember({
         email: authEmail,
         name: local?.name || authEmail.split("@")[0],
         username: local?.username || authEmail.split("@")[0],
-        role: local?.role || (isFirstUser ? "Super Admin" : "General Member"),
+        role: isSuper ? "Super Admin" : (local?.role && local.role !== "Super Admin" ? local.role : "General Member"),
         specialNumber: local?.specialNumber,
       });
 
       if (!profile) {
         return { ok: false, error: "Login succeeded but member profile could not be created in Supabase. Check RLS policies on the members table." };
+      }
+
+      // Enforce the single Super Admin rule.
+      if (isSuper && profile.role !== "Super Admin") {
+        updateUser(profile.id, { role: "Super Admin" });
+        profile = { ...profile, role: "Super Admin" };
+      } else if (!isSuper && profile.role === "Super Admin") {
+        // Someone other than Zuhair must never keep Super Admin.
+        updateUser(profile.id, { role: "General Member" });
+        profile = { ...profile, role: "General Member" };
       }
 
       // Refresh full member list so this user (and Super Admin) sees everyone.
@@ -495,6 +507,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   };
   const deleteUser: AppState["deleteUser"] = (id) => {
     const user = state.users.find((u) => u.id === id);
+    if (user?.role === "Super Admin") return; // Super Admin can never be deleted.
     // Remove from members table immediately so it disappears for everyone.
     if (isSupabaseConfigured && user) {
       deleteMemberRow(id).catch((error) => console.error("Member delete failed", error));
@@ -505,6 +518,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     _log(currentUser, `Deleted member`, "members", id);
   };
   const suspendUser: AppState["suspendUser"] = (id) => {
+    const target = state.users.find((u) => u.id === id);
+    if (target?.role === "Super Admin") return; // Super Admin can never be suspended.
     setState((s) => ({ ...s, users: s.users.map((u) => (u.id === id ? { ...u, status: u.status === "Suspended" ? "Active" : "Suspended" } : u)) }));
     _log(currentUser, `Suspended/reactivated account`, "members", id);
   };

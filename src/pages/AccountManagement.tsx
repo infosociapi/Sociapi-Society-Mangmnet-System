@@ -138,11 +138,15 @@ export default function AccountManagement() {
                     <td className="p-3 text-slate-500">{u.lastLogin ? new Date(u.lastLogin).toLocaleString() : "Never"}</td>
                     <td className="p-3 text-slate-500">{lastAct ? new Date(lastAct).toLocaleString() : "—"}</td>
                     <td className="p-3 text-right">
-                      <div className="flex justify-end gap-1">
-                        <Button size="sm" variant="ghost" icon={<KeyRound className="h-3 w-3" />} onClick={() => reset(u.id)}>Generate</Button>
-                        <Button size="sm" variant="ghost" icon={<UserX className="h-3 w-3" />} onClick={() => suspendUser(u.id)}>{u.status === "Suspended" ? "Activate" : "Suspend"}</Button>
-                        <Button size="sm" variant="ghost" icon={<Trash2 className="h-3 w-3" />} onClick={() => { if (confirm(`Delete ${u.name}?`)) deleteUser(u.id); }}>Delete</Button>
-                      </div>
+                      {u.role === "Super Admin" ? (
+                        <span className="text-xs text-amber-600 dark:text-amber-400">🔒 Protected</span>
+                      ) : (
+                        <div className="flex justify-end gap-1">
+                          <Button size="sm" variant="ghost" icon={<KeyRound className="h-3 w-3" />} onClick={() => reset(u.id)}>Generate</Button>
+                          <Button size="sm" variant="ghost" icon={<UserX className="h-3 w-3" />} onClick={() => suspendUser(u.id)}>{u.status === "Suspended" ? "Activate" : "Suspend"}</Button>
+                          <Button size="sm" variant="ghost" icon={<Trash2 className="h-3 w-3" />} onClick={() => { if (confirm(`Delete ${u.name}?`)) deleteUser(u.id); }}>Delete</Button>
+                        </div>
+                      )}
                     </td>
                   </tr>
                 );

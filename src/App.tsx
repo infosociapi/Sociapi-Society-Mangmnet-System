@@ -27,6 +27,7 @@ import Architecture from "./pages/Architecture";
 import AccountManagement from "./pages/AccountManagement";
 import PasswordVault from "./pages/PasswordVault";
 import type { ReactNode } from "react";
+import { canAccess, type Section } from "./lib/access";
 
 function Protected({ children }: { children: ReactNode }) {
   const { currentUser } = useApp();
@@ -40,20 +41,10 @@ function PublicOnly({ children }: { children: ReactNode }) {
   return <>{children}</>;
 }
 
-function RequireAccess({ section, children }: { section: string; children: ReactNode }) {
-  const { currentUser, hasPermission, isSuperAdmin } = useApp();
+function RequireAccess({ section, children }: { section: Section; children: ReactNode }) {
+  const { currentUser } = useApp();
   if (!currentUser) return <Navigate to="/login" replace />;
-  const allowed = (() => {
-    if (isSuperAdmin()) return true;
-    if (["me", "id-card", "chat", "events", "settings"].includes(section)) return true;
-    if (section === "tasks") return currentUser.role === "General Member" || currentUser.role === "Department Lead" || hasPermission("manage_tasks");
-    if (["members", "attendance", "hr"].includes(section)) return currentUser.role === "HR Manager" || hasPermission("manage_hr");
-    if (section === "finance") return currentUser.role === "Finance Manager";
-    if (section === "outreach") return currentUser.role === "Outreach Manager";
-    if (section === "accounts") return false;
-    return false;
-  })();
-  return allowed ? <>{children}</> : <Navigate to="/app/me" replace />;
+  return canAccess(currentUser, section) ? <>{children}</> : <Navigate to="/app/me" replace />;
 }
 
 // Use HashRouter for the static build (dist/index.html) so refresh works without a server

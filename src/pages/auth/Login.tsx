@@ -7,8 +7,8 @@ import { Eye, EyeOff, LogIn } from "lucide-react";
 export default function Login() {
   const { login } = useApp();
   const nav = useNavigate();
-  const [email, setEmail] = useState("muhammad.zuhair.zeb");
-  const [password, setPassword] = useState("password");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [show, setShow] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -55,9 +55,6 @@ export default function Login() {
           {loading ? "Signing in…" : "Sign in"}
         </Button>
 
-        <div className="rounded-xl bg-indigo-500/10 border border-indigo-500/20 px-3 py-2 text-xs text-slate-700 dark:text-slate-300">
-          <span className="font-semibold">Demo:</span> username/email + password <code className="font-mono">password</code>
-        </div>
       </form>
 
       <p className="text-sm text-center mt-6 text-slate-500 dark:text-slate-400">
