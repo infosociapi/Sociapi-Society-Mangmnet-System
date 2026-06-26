@@ -1,0 +1,221 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --color-*: initial;
+  --color-brand-50: #eef2ff;
+  --color-brand-100: #dbeafe;
+  --color-brand-200: #bfdbfe;
+  --color-brand-300: #93c5fd;
+  --color-brand-400: #60a5fa;
+  --color-brand-500: #14B8A6;
+  --color-brand-600: #0d9488;
+  --color-brand-700: #0f766e;
+  --color-brand-800: #115e59;
+  --color-brand-900: #111827;
+  --color-accent: #F97316;
+  --color-success: #22C55E;
+  --color-warning: #F59E0B;
+  --color-danger: #EF4444;
+  --color-white: #ffffff;
+  --color-black: #000000;
+  --color-transparent: transparent;
+  --color-slate-50: #f8fafc;
+  --color-slate-100: #f1f5f9;
+  --color-slate-200: #e2e8f0;
+  --color-slate-300: #cbd5e1;
+  --color-slate-400: #94a3b8;
+  --color-slate-500: #64748b;
+  --color-slate-600: #475569;
+  --color-slate-700: #334155;
+  --color-slate-800: #1e293b;
+  --color-slate-900: #0f172a;
+  --color-slate-950: #020617;
+  --color-zinc-100: #f4f4f5;
+  --color-red-600: #dc2626;
+  --color-rose-50: #fff1f2;
+  --color-rose-100: #ffe4e6;
+  --color-rose-300: #fda4af;
+  --color-rose-400: #fb7185;
+  --color-rose-500: #f43f5e;
+  --color-rose-600: #e11d48;
+  --color-rose-700: #be123c;
+  --color-pink-600: #db2777;
+  --color-fuchsia-300: #f0abfc;
+  --color-fuchsia-400: #e879f9;
+  --color-fuchsia-500: #d946ef;
+  --color-fuchsia-600: #c026d3;
+  --color-fuchsia-700: #a21caf;
+  --color-purple-300: #d8b4fe;
+  --color-purple-500: #a855f7;
+  --color-purple-600: #9333ea;
+  --color-purple-700: #7e22ce;
+  --color-violet-300: #c4b5fd;
+  --color-violet-400: #a78bfa;
+  --color-violet-500: #8b5cf6;
+  --color-violet-600: #7c3aed;
+  --color-violet-700: #6d28d9;
+  --color-indigo-50: #eef2ff;
+  --color-indigo-100: #e0e7ff;
+  --color-indigo-200: #c7d2fe;
+  --color-indigo-300: #a5b4fc;
+  --color-indigo-400: #818cf8;
+  --color-indigo-500: #6366f1;
+  --color-indigo-600: #4f46e5;
+  --color-indigo-700: #4338ca;
+  --color-blue-500: #3b82f6;
+  --color-blue-600: #2563eb;
+  --color-blue-700: #1d4ed8;
+  --color-sky-300: #7dd3fc;
+  --color-sky-400: #38bdf8;
+  --color-sky-500: #0ea5e9;
+  --color-sky-600: #0284c7;
+  --color-sky-700: #0369a1;
+  --color-cyan-500: #06b6d4;
+  --color-cyan-600: #0891b2;
+  --color-teal-300: #5eead4;
+  --color-teal-500: #14b8a6;
+  --color-teal-600: #0d9488;
+  --color-teal-700: #0f766e;
+  --color-emerald-300: #6ee7b7;
+  --color-emerald-400: #34d399;
+  --color-emerald-500: #10b981;
+  --color-emerald-600: #059669;
+  --color-emerald-700: #047857;
+  --color-amber-100: #fef3c7;
+  --color-amber-200: #fde68a;
+  --color-amber-300: #fcd34d;
+  --color-amber-400: #fbbf24;
+  --color-amber-500: #f59e0b;
+  --color-amber-600: #d97706;
+  --color-amber-700: #b45309;
+  --color-orange-400: #fb923c;
+  --color-orange-500: #f97316;
+  --color-orange-600: #ea580c;
+  --font-display: "Inter", ui-sans-serif, system-ui, sans-serif;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  font-family: var(--font-display);
+  -webkit-font-smoothing: antialiased;
+  background: #F8FAFC;
+  color: #0f172a;
+}
+
+.dark body {
+  background: #0F172A;
+  color: #e2e8f0;
+}
+
+/* Animated gradient background for auth */
+.auth-bg {
+  background:
+    radial-gradient(1200px 600px at -10% -20%, rgba(99, 102, 241, 0.25), transparent 60%),
+    radial-gradient(900px 600px at 110% 10%, rgba(168, 85, 247, 0.25), transparent 60%),
+    radial-gradient(800px 800px at 50% 120%, rgba(14, 165, 233, 0.2), transparent 60%),
+    linear-gradient(180deg, #0b1020 0%, #060814 100%);
+}
+
+.app-bg {
+  background:
+    radial-gradient(1000px 500px at 0% 0%, rgba(99, 102, 241, 0.08), transparent 60%),
+    radial-gradient(800px 400px at 100% 0%, rgba(168, 85, 247, 0.08), transparent 60%),
+    #F8FAFC;
+}
+
+.dark .app-bg {
+  background:
+    radial-gradient(1000px 500px at 0% 0%, rgba(99, 102, 241, 0.15), transparent 60%),
+    radial-gradient(800px 400px at 100% 0%, rgba(168, 85, 247, 0.12), transparent 60%),
+    #0F172A;
+}
+
+/* Glass card */
+.glass {
+  background: rgba(255, 255, 255, 0.7);
+  border: 1px solid rgba(15, 23, 42, 0.06);
+  backdrop-filter: blur(16px) saturate(140%);
+  -webkit-backdrop-filter: blur(16px) saturate(140%);
+}
+
+.dark .glass {
+  background: rgba(15, 23, 42, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.glass-strong {
+  background: rgba(255, 255, 255, 0.85);
+  border: 1px solid rgba(15, 23, 42, 0.08);
+  backdrop-filter: blur(20px) saturate(160%);
+}
+
+.dark .glass-strong {
+  background: rgba(13, 18, 38, 0.8);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(100, 116, 139, 0.35);
+  border-radius: 8px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(100, 116, 139, 0.55);
+}
+
+/* Animations */
+@keyframes float {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-8px); }
+}
+.animate-float { animation: float 6s ease-in-out infinite; }
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+.shimmer {
+  background: linear-gradient(90deg, transparent 0%, rgba(99,102,241,0.18) 50%, transparent 100%);
+  background-size: 200% 100%;
+  animation: shimmer 2.5s linear infinite;
+}
+
+@keyframes pulse-ring {
+  0% { box-shadow: 0 0 0 0 rgba(99,102,241,0.5); }
+  100% { box-shadow: 0 0 0 14px rgba(99,102,241,0); }
+}
+.pulse-ring { animation: pulse-ring 1.8s infinite; }
+
+.soc-gradient-br {
+  background-image: linear-gradient(to bottom right, var(--tw-gradient-stops));
+}
+
+.soc-gradient-r {
+  background-image: linear-gradient(to right, var(--tw-gradient-stops));
+}
+
+.soc-bg-main { background-image: linear-gradient(135deg, #111827 0%, #14B8A6 62%, #F97316 100%); }
+.soc-bg-teal { background-image: linear-gradient(135deg, #111827 0%, #14B8A6 100%); }
+.soc-bg-amber { background-image: linear-gradient(135deg, #F59E0B 0%, #F97316 100%); }
+.soc-bg-rose { background-image: linear-gradient(135deg, #EF4444 0%, #E11D48 100%); }
+.soc-bg-soft { background-image: linear-gradient(135deg, rgba(20,184,166,0.12) 0%, rgba(249,115,22,0.10) 100%); }
+.soc-bg-soft-r { background-image: linear-gradient(90deg, rgba(20,184,166,0.12) 0%, rgba(249,115,22,0.10) 100%); }
+
+/* Range input */
+input[type="range"] {
+  accent-color: #6366f1;
+}
