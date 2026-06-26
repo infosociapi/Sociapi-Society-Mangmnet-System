@@ -1,7 +1,27 @@
 -- Sociapi Society ERP - Production Supabase PostgreSQL schema
 -- Run this entire file in the Supabase SQL Editor.
+-- IMPORTANT: This resets old incompatible text-ID ERP tables before recreating
+-- the production UUID schema. Back up data first if this is a live database.
 
 create extension if not exists "pgcrypto";
+
+-- Drop old/non-production schemas that used text primary keys.
+-- CASCADE removes old incompatible foreign keys and RLS policies cleanly.
+drop table if exists public.task_submissions cascade;
+drop table if exists public.task_assignees cascade;
+drop table if exists public.tasks cascade;
+drop table if exists public.attendance cascade;
+drop table if exists public.event_files cascade;
+drop table if exists public.finance_entries cascade;
+drop table if exists public.outreach cascade;
+drop table if exists public.hr_applications cascade;
+drop table if exists public.notifications cascade;
+drop table if exists public.chat cascade;
+drop table if exists public.audit_logs cascade;
+drop table if exists public.events cascade;
+drop table if exists public.members cascade;
+drop table if exists public.departments cascade;
+drop table if exists public.erp_state cascade;
 
 create table if not exists public.departments (
   id uuid primary key default gen_random_uuid(),
@@ -132,11 +152,15 @@ create table if not exists public.finance_entries (
   category text not null,
   event_id uuid references public.events(id) on delete set null,
   entry_date timestamptz not null default now(),
+  reference text,
   created_by uuid references public.members(id) on delete set null,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   constraint finance_type_check check (type in ('Donation', 'Membership Fee', 'Sponsorship', 'Expense', 'Other Income'))
 );
+
+-- If the table already exists, add the new column safely.
+alter table public.finance_entries add column if not exists reference text;
 
 create table if not exists public.outreach (
   id uuid primary key default gen_random_uuid(),

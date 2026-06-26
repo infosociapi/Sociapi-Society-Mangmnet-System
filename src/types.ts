@@ -81,6 +81,7 @@ export interface FinanceEntry {
   date: string;
   category: string;
   eventId?: string;
+  reference?: string; // bill / receipt / voucher number
 }
 
 export interface OutreachContact {

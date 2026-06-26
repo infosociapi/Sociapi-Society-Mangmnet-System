@@ -202,6 +202,7 @@ function financeRow(f: FinanceEntry) {
     category: f.category,
     event_id: isUuid(f.eventId) ? f.eventId : null,
     entry_date: f.date,
+    reference: f.reference || null,
   };
 }
 export async function insertFinance(f: FinanceEntry): Promise<string | null> {
@@ -232,6 +233,7 @@ export async function loadFinance(): Promise<FinanceEntry[]> {
     category: f.category,
     eventId: f.event_id || undefined,
     date: f.entry_date,
+    reference: f.reference || undefined,
   }));
 }
 

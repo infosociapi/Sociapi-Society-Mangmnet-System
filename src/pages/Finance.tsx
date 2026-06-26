@@ -60,6 +60,7 @@ export default function Finance() {
       date: new Date(form.date as string).toISOString(),
       category: form.category || "General",
       eventId: form.eventId || undefined,
+      reference: form.reference || undefined,
     };
     if (editingId) updateFinance(editingId, payload);
     else addFinance(payload);
@@ -151,6 +152,7 @@ export default function Finance() {
                 <th className="py-3 px-3">Type</th>
                 <th className="py-3 px-3">Description</th>
                 <th className="py-3 px-3">Category</th>
+                <th className="py-3 px-3">Bill / Ref</th>
                 <th className="py-3 px-3">Event</th>
                 <th className="py-3 px-3 text-right">Amount</th>
                 {canManage && <th className="py-3 px-3"></th>}
@@ -165,6 +167,7 @@ export default function Finance() {
                   </td>
                   <td className="py-3 px-3">{f.description}</td>
                   <td className="py-3 px-3 text-slate-500">{f.category}</td>
+                  <td className="py-3 px-3 text-slate-500">{f.reference || "—"}</td>
                   <td className="py-3 px-3 text-slate-500">{events.find((e) => e.id === f.eventId)?.title || "—"}</td>
                   <td className="py-3 px-3 text-right font-semibold">
                     <span className={f.type === "Expense" ? "text-rose-600" : "text-emerald-600"}>
@@ -217,17 +220,39 @@ export default function Finance() {
               💰 This is <strong>INCOME</strong> — PKR {(form.amount || 0).toLocaleString()} will be counted as money <strong>collected</strong>.
             </div>
           )}
-          <div><Label>Description</Label><Input value={form.description || ""} onChange={(e) => setForm({ ...form, description: e.target.value })} /></div>
+          <div><Label>Description</Label><Input value={form.description || ""} onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder={form.type === "Expense" ? "e.g. Bought decoration items" : "e.g. Sponsorship from XYZ"} /></div>
           <div className="grid grid-cols-2 gap-3">
             <div><Label>Date</Label><Input type="date" value={form.date as string} onChange={(e) => setForm({ ...form, date: e.target.value })} /></div>
-            <div><Label>Category</Label><Input value={form.category || ""} onChange={(e) => setForm({ ...form, category: e.target.value })} /></div>
+            <div>
+              <Label>Category</Label>
+              <Input list="finance-categories" value={form.category || ""} onChange={(e) => setForm({ ...form, category: e.target.value })} placeholder="e.g. Purchase / Supplies" />
+              <datalist id="finance-categories">
+                <option value="Purchase / Supplies" />
+                <option value="Food & Refreshments" />
+                <option value="Decoration" />
+                <option value="Printing & Stationery" />
+                <option value="Transport" />
+                <option value="Venue" />
+                <option value="Marketing" />
+                <option value="Donations" />
+                <option value="Sponsorships" />
+                <option value="Membership" />
+                <option value="Miscellaneous" />
+              </datalist>
+            </div>
           </div>
-          <div>
-            <Label>Linked Event</Label>
-            <Select value={form.eventId || ""} onChange={(e) => setForm({ ...form, eventId: e.target.value })}>
-              <option value="">No linked event</option>
-              {events.map((e) => <option key={e.id} value={e.id}>{e.title}</option>)}
-            </Select>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <Label>Bill / Receipt No (optional)</Label>
+              <Input value={form.reference || ""} onChange={(e) => setForm({ ...form, reference: e.target.value })} placeholder="e.g. INV-1023" />
+            </div>
+            <div>
+              <Label>Linked Event (optional)</Label>
+              <Select value={form.eventId || ""} onChange={(e) => setForm({ ...form, eventId: e.target.value })}>
+                <option value="">No linked event</option>
+                {events.map((e) => <option key={e.id} value={e.id}>{e.title}</option>)}
+              </Select>
+            </div>
           </div>
         </div>
         <div className="flex justify-end gap-2 mt-6"><Button variant="ghost" onClick={() => setOpen(false)}>Cancel</Button><Button onClick={save}>{editingId ? "Save" : "Add"}</Button></div>
