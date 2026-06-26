@@ -82,12 +82,12 @@ export default function PasswordVault() {
                 <tr key={u.id}>
                   <td className="p-3 min-w-56"><div className="flex items-center gap-2"><Avatar name={u.name} gradient={u.avatar} size={32} /><div><p className="font-semibold">{u.name}</p><p className="text-xs text-slate-500">{u.email}</p></div></div></td>
                   <td className="p-3 font-mono">{u.username}</td>
-                  <td className="p-3 font-mono">{visible ? u.password : "••••••••"}</td>
+                  <td className="p-3 text-slate-500">{visible ? "No local password stored. Reset to generate a one-time temporary password." : "Supabase Auth only"}</td>
                   <td className="p-3"><Badge tone={u.role === "Super Admin" ? "fuchsia" : "slate"}>{u.role}</Badge></td>
                   <td className="p-3 text-slate-500">{u.passwordResetHistory?.at(-1)?.at ? new Date(u.passwordResetHistory.at(-1)!.at).toLocaleString() : "Never"}</td>
                   <td className="p-3 text-right">
                     <Button size="sm" variant="ghost" icon={<KeyRound className="h-3 w-3" />} onClick={() => reset(u.id)}>Reset</Button>
-                    <Button size="sm" variant="ghost" onClick={() => navigator.clipboard?.writeText(`Username: ${u.username}\nPassword: ${u.password}`)}>Copy</Button>
+                    <Button size="sm" variant="ghost" onClick={() => navigator.clipboard?.writeText(`Username: ${u.username}\nPassword: reset-required`)}>Copy Username</Button>
                   </td>
                 </tr>
               ))}

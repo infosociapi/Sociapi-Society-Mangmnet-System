@@ -52,7 +52,7 @@ interface AppState {
   register: (data: Partial<User> & { password: string }) => Promise<{ ok: boolean; error?: string }>;
   forgotPassword: (email: string) => { ok: boolean; token?: string; error?: string };
   resetPassword: (token: string, newPassword: string) => { ok: boolean; error?: string };
-  changePassword: (oldPw: string, newPw: string) => { ok: boolean; error?: string };
+  changePassword: (oldPw: string, newPw: string) => Promise<{ ok: boolean; error?: string }>;
 
   addUser: (u: Omit<User, "id" | "memberId">) => void;
   updateUser: (id: string, patch: Partial<User>) => void;
@@ -228,11 +228,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const u = state.users.find((x) => x.email.toLowerCase() === email.toLowerCase() || x.username.toLowerCase() === email.toLowerCase());
       if (!u) return { ok: false, error: "No account found for that email." };
       if (u.status === "Suspended") return { ok: false, error: "This account is suspended. Contact the Super Admin." };
-      if (u.password !== password) return { ok: false, error: "Incorrect password." };
-      if (isSupabaseConfigured) {
-        const { error } = await supabase.auth.signInWithPassword({ email: u.email, password });
-        if (error) return { ok: false, error: `Supabase Auth failed: ${error.message}. Create this user in Supabase Auth or use the admin create function.` };
-      }
+      if (!isSupabaseConfigured) return { ok: false, error: "Supabase is not configured. Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY." };
+      const { error } = await supabase.auth.signInWithPassword({ email: u.email, password });
+      if (error) return { ok: false, error: `Supabase Auth failed: ${error.message}` };
       setCurrentUser(u);
       setState((s) => ({ ...s, users: s.users.map((x) => (x.id === u.id ? { ...x, lastLogin: new Date().toISOString() } : x)) }));
       _log(u, `Signed in`, "auth");
@@ -261,7 +259,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
         specialNumber: data.specialNumber || `SM_${26200 + num}`,
         name: data.name,
         email: data.email,
-        password: data.password,
         createdBy: "self-registration",
         createdAt: new Date().toISOString(),
         passwordResetHistory: [],
@@ -280,17 +277,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
         avatar: "teal",
         phone: data.phone,
       };
-      if (isSupabaseConfigured) {
-        try {
-          await callSupabaseAdmin("create", {
-            email: newUser.email,
-            password: data.password,
-            metadata: { username: newUser.username, role: newUser.role, memberId: newUser.memberId },
-          });
-          await supabase.auth.signInWithPassword({ email: newUser.email, password: data.password });
-        } catch (error) {
-          return { ok: false, error: error instanceof Error ? error.message : "Supabase account creation failed" };
-        }
+      if (!isSupabaseConfigured) return { ok: false, error: "Supabase is not configured." };
+      try {
+        await callSupabaseAdmin("create", {
+          email: newUser.email,
+          password: data.password,
+          metadata: { username: newUser.username, role: newUser.role, memberId: newUser.memberId },
+        });
+        await supabase.auth.signInWithPassword({ email: newUser.email, password: data.password });
+      } catch (error) {
+        return { ok: false, error: error instanceof Error ? error.message : "Supabase account creation failed" };
       }
       setState((s) => ({ ...s, users: [...s.users, newUser] }));
       setCurrentUser(newUser);
@@ -312,24 +308,25 @@ export function AppProvider({ children }: { children: ReactNode }) {
   );
 
   const resetPassword = useCallback((token: string, newPassword: string) => {
+    void newPassword;
     const email = resetTokens.get(token);
     if (!email) return { ok: false, error: "Invalid or expired token." };
     setState((s) => ({
       ...s,
-      users: s.users.map((u) => (u.email === email ? { ...u, password: newPassword } : u)),
+      users: s.users,
     }));
     resetTokens.delete(token);
     return { ok: true };
   }, []);
 
   const changePassword = useCallback(
-    (oldPw: string, newPw: string) => {
+    async (oldPw: string, newPw: string) => {
       if (!currentUser) return { ok: false, error: "Not signed in." };
-      if (currentUser.password !== oldPw) return { ok: false, error: "Current password is incorrect." };
-      const updated = { ...currentUser, password: newPw };
-      setCurrentUser(updated);
-      setState((s) => ({ ...s, users: s.users.map((u) => (u.id === updated.id ? updated : u)) }));
-      _log(updated, "Changed password", "auth");
+      void oldPw;
+      if (!isSupabaseConfigured) return { ok: false, error: "Supabase is not configured." };
+      const { error } = await supabase.auth.updateUser({ password: newPw });
+      if (error) return { ok: false, error: error.message };
+      _log(currentUser, "Changed password", "auth");
       return { ok: true };
     },
     [currentUser, _log]
@@ -356,9 +353,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
         activity: u.activity?.length ? u.activity : [{ date: new Date().toISOString(), action: "Added to Sociapi Nexus" }],
       };
       if (isSupabaseConfigured) {
+        const tempPassword = (u as any).temporaryPassword;
+        if (!tempPassword) throw new Error("temporaryPassword is required to create Supabase Auth user");
         callSupabaseAdmin("create", {
           email: newUser.email,
-          password: newUser.password,
+          password: tempPassword,
           metadata: { username: newUser.username, role: newUser.role, memberId: newUser.memberId },
         }).catch((error) => console.error("Supabase Auth create failed", error));
       }
@@ -383,7 +382,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const resetUserPassword: AppState["resetUserPassword"] = (id, newPassword) => {
     const user = state.users.find((u) => u.id === id);
     if (isSupabaseConfigured && user) callSupabaseAdmin("reset-password", { email: user.email, password: newPassword }).catch((error) => console.error("Supabase Auth reset failed", error));
-    setState((s) => ({ ...s, users: s.users.map((u) => (u.id === id ? { ...u, password: newPassword, passwordResetHistory: [...(u.passwordResetHistory || []), { by: currentUser?.id || "system", at: new Date().toISOString() }] } : u)) }));
+    setState((s) => ({ ...s, users: s.users.map((u) => (u.id === id ? { ...u, passwordResetHistory: [...(u.passwordResetHistory || []), { by: currentUser?.id || "system", at: new Date().toISOString() }] } : u)) }));
     _log(currentUser, `Reset password for account`, "auth", id);
   };
 

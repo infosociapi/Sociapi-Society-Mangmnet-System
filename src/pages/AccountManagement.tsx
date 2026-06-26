@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Avatar, Badge, Button, Card, Input } from "../components/ui";
 import { useApp } from "../context/AppContext";
-import { Eye, EyeOff, KeyRound, Search, ShieldAlert, Trash2, UserX } from "lucide-react";
+import { KeyRound, Search, ShieldAlert, Trash2, UserX } from "lucide-react";
 import { sendResendEmail } from "../lib/resend";
 
 function makePassword() {
@@ -11,7 +11,6 @@ function makePassword() {
 export default function AccountManagement() {
   const { users, activityLogs, isSuperAdmin, suspendUser, resetUserPassword, deleteUser, addNotification } = useApp();
   const [q, setQ] = useState("");
-  const [showPasswords, setShowPasswords] = useState(false);
   const [lastGenerated, setLastGenerated] = useState<{ user: string; username: string; password: string } | null>(null);
   const [mailStatus, setMailStatus] = useState("");
 
@@ -73,9 +72,6 @@ export default function AccountManagement() {
         <div className="flex gap-2">
           <Badge tone="emerald">{users.filter((u) => u.status === "Active").length} active</Badge>
           <Badge tone="indigo">{users.filter((u) => u.lastLogin).length} logged in</Badge>
-          <Button size="sm" variant="outline" icon={showPasswords ? <EyeOff className="h-3 w-3" /> : <Eye className="h-3 w-3" />} onClick={() => setShowPasswords((v) => !v)}>
-            {showPasswords ? "Hide Passwords" : "Show Passwords"}
-          </Button>
         </div>
       </div>
 
@@ -109,7 +105,7 @@ export default function AccountManagement() {
               <tr>
                 <th className="text-left p-3">Member</th>
                 <th className="text-left p-3">Username</th>
-                <th className="text-left p-3">Password</th>
+                <th className="text-left p-3">Credentials</th>
                 <th className="text-left p-3">Role</th>
                 <th className="text-left p-3">Status</th>
                 <th className="text-left p-3">Created By</th>
@@ -134,12 +130,7 @@ export default function AccountManagement() {
                       </div>
                     </td>
                     <td className="p-3 font-mono">{u.username}</td>
-                    <td className="p-3 font-mono">
-                      {showPasswords ? u.password : "••••••••"}
-                      {showPasswords && (
-                        <button className="ml-2 text-xs text-blue-600 hover:underline" onClick={() => navigator.clipboard?.writeText(`Username: ${u.username}\nPassword: ${u.password}`)}>Copy</button>
-                      )}
-                    </td>
+                    <td className="p-3 text-slate-500">Stored in Supabase Auth only. Generate a temporary password to copy/email it once.</td>
                     <td className="p-3"><Badge tone={u.role === "Super Admin" ? "fuchsia" : "indigo"}>{u.role}</Badge></td>
                     <td className="p-3"><Badge tone={u.status === "Active" ? "emerald" : u.status === "Suspended" ? "rose" : "slate"}>{u.status}</Badge></td>
                     <td className="p-3 text-slate-500">{creatorName(u.createdBy)}</td>

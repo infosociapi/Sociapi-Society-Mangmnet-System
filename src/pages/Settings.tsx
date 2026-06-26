@@ -14,11 +14,11 @@ export default function Settings() {
 
   if (!currentUser) return null;
 
-  const onChange = () => {
+  const onChange = async () => {
     setMsg(null);
     if (newPw !== confirmPw) return setMsg({ type: "err", text: "Passwords do not match" });
     if (newPw.length < 6) return setMsg({ type: "err", text: "Password must be at least 6 characters" });
-    const r = changePassword(oldPw, newPw);
+    const r = await changePassword(oldPw, newPw);
     if (!r.ok) setMsg({ type: "err", text: r.error || "Error" });
     else {
       setMsg({ type: "ok", text: "Password updated successfully." });

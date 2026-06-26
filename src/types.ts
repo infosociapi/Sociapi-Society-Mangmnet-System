@@ -17,7 +17,6 @@ export interface User {
   specialNumber: string;
   name: string;
   email: string;
-  password: string; // mock only
   createdBy?: string;
   createdAt?: string;
   lastLogin?: string;

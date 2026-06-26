@@ -261,12 +261,13 @@ function MemberFormModal({
   editing: User | null;
   onSave: (u: Partial<User>) => void;
 }) {
-  const [form, setForm] = useState<Partial<User>>(
+  type MemberForm = Partial<User> & { temporaryPassword?: string };
+  const [form, setForm] = useState<MemberForm>(
     editing || {
       name: "",
       username: "",
       email: "",
-      password: "password",
+      temporaryPassword: "",
       role: "General Member",
       position: "Member",
       department: "General",
@@ -289,7 +290,7 @@ function MemberFormModal({
         name: "",
         username: "",
         email: "",
-        password: "password",
+        temporaryPassword: "",
         role: "General Member",
         position: "Member",
         department: "General",
@@ -311,9 +312,9 @@ function MemberFormModal({
   const generateCredentials = () => {
     const base = (form.name || "member").toLowerCase().replace(/\(.+?\)/g, "").trim().replace(/\s+/g, ".").replace(/[^a-z.]/g, "");
     const temp = "SOC-" + Math.random().toString(36).slice(2, 8).toUpperCase();
-    setForm((f) => ({ ...f, username: f.username || base, password: temp }));
+    setForm((f) => ({ ...f, username: f.username || base, temporaryPassword: temp }));
   };
-  const copyCredentials = () => navigator.clipboard?.writeText(`Username: ${form.username || ""}\nTemporary password: ${form.password || ""}`);
+  const copyCredentials = () => navigator.clipboard?.writeText(`Username: ${form.username || ""}\nTemporary password: ${form.temporaryPassword || ""}`);
 
   return (
     <Modal open={open} onClose={onClose} title={editing ? "Edit Member" : "Add Member"} size="lg">
@@ -332,7 +333,7 @@ function MemberFormModal({
         </div>
         <div>
           <Label>Temporary Password</Label>
-          <Input value={form.password || ""} onChange={(e) => upd("password", e.target.value)} placeholder="Temporary password" />
+          <Input value={form.temporaryPassword || ""} onChange={(e) => upd("temporaryPassword", e.target.value)} placeholder="Temporary password for Supabase Auth" />
         </div>
         <div>
           <Label>Role</Label>
