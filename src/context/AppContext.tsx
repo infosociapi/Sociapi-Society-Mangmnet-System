@@ -225,15 +225,57 @@ export function AppProvider({ children }: { children: ReactNode }) {
   // === Auth ===
   const login = useCallback(
     async (email: string, password: string) => {
-      const u = state.users.find((x) => x.email.toLowerCase() === email.toLowerCase() || x.username.toLowerCase() === email.toLowerCase());
-      if (!u) return { ok: false, error: "No account found for that email." };
-      if (u.status === "Suspended") return { ok: false, error: "This account is suspended. Contact the Super Admin." };
       if (!isSupabaseConfigured) return { ok: false, error: supabaseConfigMessage };
-      const { error } = await supabase.auth.signInWithPassword({ email: u.email, password });
+
+      // Allow login by username OR email. Resolve username -> email from the members list if possible.
+      const local = state.users.find(
+        (x) => x.email.toLowerCase() === email.toLowerCase() || x.username.toLowerCase() === email.toLowerCase()
+      );
+      const loginEmail = local?.email || email;
+
+      if (local && local.status === "Suspended") {
+        return { ok: false, error: "This account is suspended. Contact the Super Admin." };
+      }
+
+      // Authenticate directly against Supabase Auth (source of truth).
+      const { data, error } = await supabase.auth.signInWithPassword({ email: loginEmail, password });
       if (error) return { ok: false, error: `Supabase Auth failed: ${error.message}` };
-      setCurrentUser(u);
-      setState((s) => ({ ...s, users: s.users.map((x) => (x.id === u.id ? { ...x, lastLogin: new Date().toISOString() } : x)) }));
-      _log(u, `Signed in`, "auth");
+
+      const authEmail = data.user?.email || loginEmail;
+
+      // Find the matching member profile. If none exists yet, build a minimal one
+      // so the Super Admin / first user can still access the app after migration.
+      let profile = state.users.find((x) => x.email.toLowerCase() === authEmail.toLowerCase());
+      if (!profile) {
+        profile = {
+          id: data.user?.id || "u" + Date.now(),
+          username: (authEmail.split("@")[0] || "member"),
+          memberId: "SOC-2026-0001",
+          specialNumber: "SF_25100",
+          name: authEmail.split("@")[0],
+          email: authEmail,
+          role: "Super Admin",
+          position: "Member",
+          department: "Leadership",
+          skills: [],
+          joinDate: new Date().toISOString(),
+          avatar: "teal",
+          points: 0,
+          attendance: 0,
+          performanceScore: 0,
+          status: "Active",
+          certificates: [],
+          activity: [],
+          createdAt: new Date().toISOString(),
+          lastLogin: new Date().toISOString(),
+        };
+        setState((s) => ({ ...s, users: [...s.users, profile as User] }));
+      } else {
+        setState((s) => ({ ...s, users: s.users.map((x) => (x.id === profile!.id ? { ...x, lastLogin: new Date().toISOString() } : x)) }));
+      }
+
+      setCurrentUser(profile);
+      _log(profile, `Signed in`, "auth");
       return { ok: true };
     },
     [state.users, _log]
