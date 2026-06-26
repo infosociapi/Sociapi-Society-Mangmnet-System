@@ -27,7 +27,7 @@ import {
   seedTemplates,
   seedUsers,
 } from "../data/seed";
-import { callSupabaseAdmin, insertChatMessage, loadChats, loadErpState, loadMembers, saveErpState } from "../lib/supabaseStore";
+import { callSupabaseAdmin, ensureMember, insertChatMessage, loadChats, loadErpState, loadMembers, saveErpState } from "../lib/supabaseStore";
 import { isSupabaseConfigured, supabase, supabaseConfigMessage } from "../lib/supabase";
 
 interface AppState {
@@ -268,38 +268,24 @@ export function AppProvider({ children }: { children: ReactNode }) {
       if (error) return { ok: false, error: `Supabase Auth failed: ${error.message}` };
 
       const authEmail = data.user?.email || loginEmail;
+      const isFirstUser = !local; // very first migration user becomes Super Admin
 
-      // Find the matching member profile. If none exists yet, build a minimal one
-      // so the Super Admin / first user can still access the app after migration.
-      let profile = state.users.find((x) => x.email.toLowerCase() === authEmail.toLowerCase());
+      // Ensure a canonical row exists in the Supabase `members` table and use its real id.
+      const profile = await ensureMember({
+        email: authEmail,
+        name: local?.name || authEmail.split("@")[0],
+        username: local?.username || authEmail.split("@")[0],
+        role: local?.role || (isFirstUser ? "Super Admin" : "General Member"),
+        specialNumber: local?.specialNumber,
+      });
+
       if (!profile) {
-        profile = {
-          id: data.user?.id || "u" + Date.now(),
-          username: (authEmail.split("@")[0] || "member"),
-          memberId: "SOC-2026-0001",
-          specialNumber: "SF_25100",
-          name: authEmail.split("@")[0],
-          email: authEmail,
-          role: "Super Admin",
-          position: "Member",
-          department: "Leadership",
-          skills: [],
-          joinDate: new Date().toISOString(),
-          avatar: "teal",
-          points: 0,
-          attendance: 0,
-          performanceScore: 0,
-          status: "Active",
-          certificates: [],
-          activity: [],
-          createdAt: new Date().toISOString(),
-          lastLogin: new Date().toISOString(),
-        };
-        setState((s) => ({ ...s, users: [...s.users, profile as User] }));
-      } else {
-        setState((s) => ({ ...s, users: s.users.map((x) => (x.id === profile!.id ? { ...x, lastLogin: new Date().toISOString() } : x)) }));
+        return { ok: false, error: "Login succeeded but member profile could not be created in Supabase. Check RLS policies on the members table." };
       }
 
+      // Refresh full member list so this user (and Super Admin) sees everyone.
+      const members = await loadMembers();
+      setState((s) => ({ ...s, users: members.length ? members : [...s.users, profile] }));
       setCurrentUser(profile);
       _log(profile, `Signed in`, "auth");
       return { ok: true };
@@ -357,18 +343,29 @@ export function AppProvider({ children }: { children: ReactNode }) {
       });
       if (signUpError) return { ok: false, error: signUpError.message };
 
+      // Create the canonical members row (so Super Admin sees them too).
+      const profile = await ensureMember({
+        email: newUser.email,
+        name: newUser.name,
+        username: newUser.username,
+        role: newUser.role,
+        specialNumber: newUser.specialNumber,
+      });
+
       // If Supabase has "Confirm email" ON, there is no active session yet.
       if (!signUpData.session) {
-        setState((s) => ({ ...s, users: [...s.users, newUser] }));
+        const members = await loadMembers();
+        setState((s) => ({ ...s, users: members.length ? members : [...s.users, newUser] }));
         return {
           ok: false,
           error: "Account created, but email confirmation is required. Confirm the email in Supabase (or disable 'Confirm email' under Authentication → Providers) and then sign in.",
         };
       }
 
-      setState((s) => ({ ...s, users: [...s.users, newUser] }));
-      setCurrentUser(newUser);
-      _log(newUser, `Registered new account`, "auth");
+      const members = await loadMembers();
+      setState((s) => ({ ...s, users: members.length ? members : [...s.users, newUser] }));
+      setCurrentUser(profile || newUser);
+      _log(profile || newUser, `Registered new account`, "auth");
       return { ok: true };
     },
     [state.users, _log]

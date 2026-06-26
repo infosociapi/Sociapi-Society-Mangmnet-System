@@ -197,6 +197,81 @@ export async function loadMembers(): Promise<User[]> {
   }));
 }
 
+function mapMemberRow(m: any, departments: any[]): User {
+  return {
+    id: m.id,
+    username: m.username,
+    memberId: m.member_id,
+    specialNumber: m.special_number,
+    name: m.name,
+    email: m.email,
+    phone: m.phone || "",
+    role: m.role,
+    position: m.position,
+    department: (departments || []).find((d: any) => d.id === m.department_id)?.name || "General",
+    skills: [],
+    joinDate: m.join_date,
+    avatar: "teal",
+    points: m.points,
+    attendance: Number(m.attendance),
+    performanceScore: Number(m.performance_score),
+    status: m.status,
+    certificates: [],
+    activity: [],
+    createdBy: m.created_by || undefined,
+    createdAt: m.created_at,
+    lastLogin: m.last_login || undefined,
+  };
+}
+
+// Guarantees a row exists in `members` for the given auth user, and returns the
+// canonical User (with the real members.id). This keeps currentUser.id aligned
+// with members.id so direct messages and member lists work correctly.
+export async function ensureMember(opts: {
+  email: string;
+  name?: string;
+  username?: string;
+  role?: string;
+  specialNumber?: string;
+}): Promise<User | null> {
+  if (!isSupabaseConfigured) return null;
+  const { data: departments } = await supabase.from("departments").select("id,name");
+
+  // Already exists?
+  const { data: existing } = await supabase.from("members").select("*").eq("email", opts.email).maybeSingle();
+  if (existing) {
+    await supabase.from("members").update({ last_login: new Date().toISOString() }).eq("id", existing.id);
+    return mapMemberRow({ ...existing, last_login: new Date().toISOString() }, departments || []);
+  }
+
+  // Generate a unique member_id / special_number based on current count.
+  const { count } = await supabase.from("members").select("*", { count: "exact", head: true });
+  const next = (count || 0) + 1;
+  const suffix = Math.random().toString(36).slice(2, 5).toUpperCase();
+  const row = {
+    username: opts.username || opts.email.split("@")[0],
+    member_id: `SOC-2026-${String(next).padStart(4, "0")}`,
+    special_number: opts.specialNumber || `SM_${26200 + next}_${suffix}`,
+    name: opts.name || opts.email.split("@")[0],
+    email: opts.email,
+    role: opts.role || "General Member",
+    position: "Member",
+    status: "Active",
+    attendance: 0,
+    points: 0,
+    performance_score: 0,
+    join_date: new Date().toISOString().slice(0, 10),
+    created_at: new Date().toISOString(),
+    last_login: new Date().toISOString(),
+  };
+  const { data: inserted, error } = await supabase.from("members").insert(row).select("*").maybeSingle();
+  if (error) {
+    console.error("ensureMember insert failed", error);
+    return null;
+  }
+  return inserted ? mapMemberRow(inserted, departments || []) : null;
+}
+
 export async function uploadToSupabaseStorage(path: string, file: File) {
   if (!isSupabaseConfigured) throw new Error("Supabase is not configured");
   const { error } = await supabase.storage.from(SUPABASE_STORAGE_BUCKET).upload(path, file, {
