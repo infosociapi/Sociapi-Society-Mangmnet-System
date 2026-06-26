@@ -5,7 +5,7 @@ import type { FinanceEntry } from "../types";
 import { ArrowDownRight, ArrowUpRight, Plus, Wallet, TrendingUp, TrendingDown } from "lucide-react";
 import { Area, AreaChart, CartesianGrid, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 
-const types: FinanceEntry["type"][] = ["Donation", "Membership Fee", "Sponsorship", "Expense", "Other Income"];
+
 
 export default function Finance() {
   const { finance, addFinance, updateFinance, deleteFinance, events, hasPermission } = useApp();
@@ -190,7 +190,15 @@ export default function Finance() {
             <div>
               <Label>Type</Label>
               <Select value={form.type as string} onChange={(e) => setForm({ ...form, type: e.target.value as FinanceEntry["type"] })}>
-                {types.map((t) => <option key={t}>{t}</option>)}
+                <optgroup label="Money IN (Collected)">
+                  <option>Donation</option>
+                  <option>Sponsorship</option>
+                  <option>Membership Fee</option>
+                  <option>Other Income</option>
+                </optgroup>
+                <optgroup label="Money OUT (Spent)">
+                  <option>Expense</option>
+                </optgroup>
               </Select>
             </div>
             <div>
@@ -198,6 +206,17 @@ export default function Finance() {
               <Input type="number" value={form.amount || ""} onChange={(e) => setForm({ ...form, amount: +e.target.value })} />
             </div>
           </div>
+
+          {/* Clear indicator: income or expense */}
+          {form.type === "Expense" ? (
+            <div className="px-3 py-2 rounded-xl bg-rose-500/10 text-rose-700 dark:text-rose-300 text-sm ring-1 ring-rose-500/20">
+              💸 This is an <strong>EXPENSE</strong> — PKR {(form.amount || 0).toLocaleString()} will be counted as money <strong>spent</strong>.
+            </div>
+          ) : (
+            <div className="px-3 py-2 rounded-xl bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 text-sm ring-1 ring-emerald-500/20">
+              💰 This is <strong>INCOME</strong> — PKR {(form.amount || 0).toLocaleString()} will be counted as money <strong>collected</strong>.
+            </div>
+          )}
           <div><Label>Description</Label><Input value={form.description || ""} onChange={(e) => setForm({ ...form, description: e.target.value })} /></div>
           <div className="grid grid-cols-2 gap-3">
             <div><Label>Date</Label><Input type="date" value={form.date as string} onChange={(e) => setForm({ ...form, date: e.target.value })} /></div>
