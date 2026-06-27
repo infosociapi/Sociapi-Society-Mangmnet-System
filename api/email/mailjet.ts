@@ -1,14 +1,6 @@
-interface RequestLike {
-  method?: string;
-  body?: any;
-}
+import type { VercelRequest, VercelResponse } from "@vercel/node";
 
-interface ResponseLike {
-  status: (code: number) => ResponseLike;
-  json: (data: unknown) => void;
-}
-
-export default async function handler(req: RequestLike, res: ResponseLike) {
+export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Method not allowed" });
   }
@@ -20,7 +12,7 @@ export default async function handler(req: RequestLike, res: ResponseLike) {
 
   if (!apiKey || !secretKey) {
     return res.status(500).json({
-      error: "MAILJET_API_KEY and MAILJET_SECRET_KEY are missing on the server. Add them in deployment environment variables.",
+      error: "MAILJET_API_KEY and MAILJET_SECRET_KEY are missing on the server.",
     });
   }
   if (!fromEmail) {
@@ -29,7 +21,6 @@ export default async function handler(req: RequestLike, res: ResponseLike) {
     });
   }
 
-  // Body may arrive as a raw string on some platforms.
   let payload: any = req.body || {};
   if (typeof payload === "string") {
     try { payload = JSON.parse(payload); } catch { payload = {}; }
@@ -41,7 +32,6 @@ export default async function handler(req: RequestLike, res: ResponseLike) {
   }
 
   const recipients = (Array.isArray(to) ? to : [to]).map((email: string) => ({ Email: email }));
-
   const auth = Buffer.from(`${apiKey}:${secretKey}`).toString("base64");
 
   try {
@@ -64,14 +54,22 @@ export default async function handler(req: RequestLike, res: ResponseLike) {
     });
 
     const data = await response.json();
-    if (!response.ok) {
-      return res.status(response.status).json({
+
+    // Log full Mailjet response so it shows in Vercel logs.
+    console.log("MAILJET_RESPONSE", JSON.stringify(data));
+    console.log("MAILJET_FROM_USED", fromEmail);
+
+    const msgStatus = data?.Messages?.[0]?.Status;
+    if (!response.ok || msgStatus !== "success") {
+      return res.status(response.ok ? 502 : response.status).json({
         ok: false,
-        error: data?.ErrorMessage || data?.Messages?.[0]?.Errors?.[0]?.ErrorMessage || "Mailjet send failed",
+        error:
+          data?.ErrorMessage ||
+          data?.Messages?.[0]?.Errors?.[0]?.ErrorMessage ||
+          `Mailjet did not confirm send (status: ${msgStatus || "unknown"})`,
         details: data,
       });
     }
-
     return res.status(200).json({ ok: true, result: data });
   } catch (error) {
     return res.status(500).json({
