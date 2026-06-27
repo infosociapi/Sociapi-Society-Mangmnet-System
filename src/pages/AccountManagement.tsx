@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Avatar, Badge, Button, Card, Input } from "../components/ui";
 import { useApp } from "../context/AppContext";
 import { KeyRound, Search, ShieldAlert, Trash2, UserX } from "lucide-react";
-import { sendResendEmail } from "../lib/resend";
+import { sendMailjetEmail } from "../lib/mailjet";
 
 function makePassword() {
   return `Sociapi@2026#${Math.random().toString(36).slice(2, 5).toUpperCase()}`;
@@ -48,9 +48,9 @@ export default function AccountManagement() {
     if (!lastGenerated) return;
     const user = users.find((u) => u.name === lastGenerated.user);
     const to = user?.email || "sociapisociety@gmail.com";
-    setMailStatus("Sending via Resend...");
+    setMailStatus("Sending via Mailjet...");
     try {
-      await sendResendEmail({
+      await sendMailjetEmail({
         to,
         subject: "Your Sociapi Society ERP credentials",
         html: `<p>Your account credentials:</p><p><strong>Username:</strong> ${lastGenerated.username}</p><p><strong>Password:</strong> ${lastGenerated.password}</p>`,
@@ -58,7 +58,7 @@ export default function AccountManagement() {
       setMailStatus(`Email sent to ${to}`);
       addNotification({ title: "Credentials Email Sent", body: `Credentials sent to ${to}`, channel: "Email", type: "success" });
     } catch (error) {
-      setMailStatus(`Email failed: ${error instanceof Error ? error.message : "API not configured"}. If using onboarding@resend.dev, the recipient must be the verified Resend account email or you must verify a domain.`);
+      setMailStatus(`Email failed: ${error instanceof Error ? error.message : "API not configured"}. Make sure MAILJET_FROM_EMAIL is a verified Mailjet sender.`);
     }
   };
 

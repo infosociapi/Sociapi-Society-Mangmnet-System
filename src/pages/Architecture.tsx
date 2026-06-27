@@ -27,7 +27,7 @@ const endpoints = [
   "GET /api/tasks", "POST /api/tasks", "POST /api/tasks/:id/submit", "POST /api/tasks/:id/review", "POST /api/tasks/:id/approve",
   "GET /api/events", "POST /api/events", "PATCH /api/events/:id", "DELETE /api/events/:id", "GET /api/events/:id/report",
   "GET /api/finance/reports/monthly", "GET /api/finance/reports/annual", "GET /api/finance/events/:id",
-  "GET /api/hr/dashboard", "GET /api/outreach", "PATCH /api/outreach/:id/stage", "POST /api/email/resend", "POST /api/email/schedule", "GET /api/audit-logs",
+  "GET /api/hr/dashboard", "GET /api/outreach", "PATCH /api/outreach/:id/stage", "POST /api/email/mailjet", "POST /api/email/schedule", "GET /api/audit-logs",
 ];
 
 export default function Architecture() {
@@ -40,7 +40,7 @@ export default function Architecture() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <Card className="p-5"><Database className="h-5 w-5 text-blue-600 mb-2" /><p className="font-semibold">Database</p><p className="text-sm text-slate-500 mt-1">PostgreSQL-ready relational schema with audit-safe ownership and event-linked finance.</p></Card>
         <Card className="p-5"><ShieldCheck className="h-5 w-5 text-emerald-600 mb-2" /><p className="font-semibold">Security</p><p className="text-sm text-slate-500 mt-1">JWT sessions, bcrypt passwords, RBAC guards, suspended-account lockout, complete audit logs.</p></Card>
-        <Card className="p-5"><ServerCog className="h-5 w-5 text-cyan-600 mb-2" /><p className="font-semibold">Integrations</p><p className="text-sm text-slate-500 mt-1">Resend email adapter, QR attendance scanner, PDF/PNG ID card generator.</p></Card>
+        <Card className="p-5"><ServerCog className="h-5 w-5 text-cyan-600 mb-2" /><p className="font-semibold">Integrations</p><p className="text-sm text-slate-500 mt-1">Mailjet email adapter, QR attendance scanner, PDF/PNG ID card generator.</p></Card>
       </div>
       <Card className="p-6">
         <div className="flex items-center gap-2 mb-3"><Badge tone="indigo">SQL</Badge><h2 className="font-semibold">Database Schema</h2></div>
@@ -54,7 +54,7 @@ export default function Architecture() {
       </Card>
       <Card className="p-6">
         <h2 className="font-semibold mb-2">Deployment Structure</h2>
-        <p className="text-sm text-slate-500">Frontend: React + Vite + Tailwind v4. Backend target: Node/Express or serverless functions. Data: PostgreSQL. Storage: S3-compatible bucket for profiles, task files, event gallery. Email: Resend API key via environment variable <code>RESEND_API_KEY</code>. Deploy frontend to Vercel/Netlify and API to Railway/Fly/Vercel Functions.</p>
+        <p className="text-sm text-slate-500">Frontend: React + Vite + Tailwind v4. Backend target: Node/Express or serverless functions. Data: PostgreSQL. Storage: S3-compatible bucket for profiles, task files, event gallery. Email: Mailjet via environment variables <code>MAILJET_API_KEY</code>, <code>MAILJET_SECRET_KEY</code>, <code>MAILJET_FROM_EMAIL</code>. Deploy frontend to Vercel/Netlify and API to Vercel Functions.</p>
       </Card>
     </div>
   );

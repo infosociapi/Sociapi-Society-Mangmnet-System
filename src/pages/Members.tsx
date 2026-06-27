@@ -381,7 +381,7 @@ function MemberFormModal({
       <div className="mt-4 flex flex-wrap gap-2 rounded-xl bg-slate-100/60 dark:bg-white/5 p-3">
         <Button size="sm" variant="outline" onClick={generateCredentials}>Generate Temporary Credentials</Button>
         <Button size="sm" variant="ghost" onClick={copyCredentials}>Copy Credentials</Button>
-        <Button size="sm" variant="ghost" onClick={() => alert("Credentials email queued via Resend adapter.")}>Send via Email</Button>
+        <Button size="sm" variant="ghost" onClick={() => alert("Credentials email queued via Mailjet adapter.")}>Send via Email</Button>
       </div>
       <div className="flex justify-end gap-2 mt-6">
         <Button variant="ghost" onClick={onClose}>Cancel</Button>

@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Avatar, Badge, Button, Card, Input, Label, Select, Textarea } from "../components/ui";
 import { useApp } from "../context/AppContext";
 import { Calendar, Mail, MessageCircle, Plus, Send, Sparkles } from "lucide-react";
-import { sendResendEmail } from "../lib/resend";
+import { sendMailjetEmail } from "../lib/mailjet";
 
 export default function Communications() {
   const { users, templates, addNotification, hasPermission } = useApp();
@@ -32,14 +32,14 @@ export default function Communications() {
       try {
         const selected = users.find((u) => u.id === recipientId);
         const to = mode === "bulk" ? users.map((u) => u.email) : selected?.email || "sociapisociety@gmail.com";
-        await sendResendEmail({
+        await sendMailjetEmail({
           to,
           subject: subject || "Sociapi Society ERP Notice",
           html: body.replace(/\n/g, "<br />"),
           scheduledAt: schedule || undefined,
         });
-        addNotification({ title: "Email Sent", body: `Email delivered via Resend to ${recipients} recipient(s).`, channel: "Email", type: "success" });
-        setSent(`✅ Email sent via Resend to ${recipients} recipient(s).`);
+        addNotification({ title: "Email Sent", body: `Email delivered via Mailjet to ${recipients} recipient(s).`, channel: "Email", type: "success" });
+        setSent(`✅ Email sent via Mailjet to ${recipients} recipient(s).`);
       } catch (error) {
         const msg = error instanceof Error ? error.message : "Email backend not available";
         addNotification({ title: "Email FAILED", body: msg, channel: "Email", type: "alert" });
@@ -67,7 +67,7 @@ export default function Communications() {
         <div className="flex items-center gap-2 px-3 py-2 rounded-xl soc-bg-soft-r ring-1 ring-indigo-500/20 text-xs">
           <Mail className="h-4 w-4 text-indigo-500" />
           <span className="font-semibold">Email Provider:</span>
-          <span className="font-mono">Resend</span>
+          <span className="font-mono">Mailjet</span>
           <span className="text-slate-500">· works only on Vercel deploy</span>
         </div>
       </div>

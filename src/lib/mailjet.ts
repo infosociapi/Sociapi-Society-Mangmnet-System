@@ -1,9 +1,10 @@
-export interface ResendEmailPayload {
+export interface MailjetEmailPayload {
   to: string | string[];
   subject: string;
   html: string;
   scheduledAt?: string;
   from?: string;
+  fromName?: string;
 }
 
 async function parseError(response: Response) {
@@ -16,25 +17,22 @@ async function parseError(response: Response) {
   }
 }
 
-async function postEmail(endpoint: string, payload: ResendEmailPayload) {
+async function postEmail(endpoint: string, payload: MailjetEmailPayload) {
   const response = await fetch(endpoint, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
-
   if (!response.ok) {
     throw new Error(await parseError(response));
   }
-
-  return response.json() as Promise<{ ok?: boolean; id?: string; status?: "queued" | "sent"; result?: unknown }>;
+  return response.json() as Promise<{ ok?: boolean; result?: unknown }>;
 }
 
-// Frontend-safe adapter contract. The real Resend API key must remain on the server.
-export async function sendResendEmail(payload: ResendEmailPayload) {
-  const endpoints = ["/api/email/resend", "/.netlify/functions/send-email"];
+// Frontend-safe adapter. The real Mailjet keys must stay on the server (Vercel/Netlify).
+export async function sendMailjetEmail(payload: MailjetEmailPayload) {
+  const endpoints = ["/api/email/mailjet", "/.netlify/functions/send-email"];
   const errors: string[] = [];
-
   for (const endpoint of endpoints) {
     try {
       return await postEmail(endpoint, payload);
@@ -42,9 +40,8 @@ export async function sendResendEmail(payload: ResendEmailPayload) {
       errors.push(`${endpoint}: ${error instanceof Error ? error.message : "failed"}`);
     }
   }
-
   throw new Error(
-    `Email backend failed. ${errors.join(" | ")} | Fix: deploy the serverless endpoint and set RESEND_API_KEY in server environment variables.`
+    `Email backend failed. ${errors.join(" | ")} | Deploy on Vercel/Netlify and set MAILJET_API_KEY + MAILJET_SECRET_KEY + MAILJET_FROM_EMAIL.`
   );
 }
 

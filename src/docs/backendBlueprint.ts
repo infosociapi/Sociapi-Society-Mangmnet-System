@@ -27,5 +27,5 @@ export const apiEndpoints = [
   "GET /api/finance/monthly", "GET /api/finance/annual", "GET /api/finance/events/:id",
   "GET /api/hr/dashboard", "POST /api/hr/applications", "PATCH /api/hr/applications/:id",
   "GET /api/outreach", "POST /api/outreach", "PATCH /api/outreach/:id/stage",
-  "POST /api/email/resend", "POST /api/email/schedule", "GET /api/audit-logs",
+  "POST /api/email/mailjet", "POST /api/email/schedule", "GET /api/audit-logs",
 ];
