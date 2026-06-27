@@ -23,7 +23,12 @@ export default async function handler(req: RequestLike, res: ResponseLike) {
 
   const resend = new Resend(process.env.RESEND_API_KEY);
 
-  const { to, subject, html, from = "onboarding@resend.dev" } = req.body || {};
+  // Vercel may pass the body as a raw string; parse it safely.
+  let payload: any = req.body || {};
+  if (typeof payload === "string") {
+    try { payload = JSON.parse(payload); } catch { payload = {}; }
+  }
+  const { to, subject, html, from = "onboarding@resend.dev" } = payload;
   if (!to || !subject || !html) {
     return res.status(400).json({ error: "to, subject and html are required" });
   }

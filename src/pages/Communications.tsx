@@ -27,7 +27,7 @@ export default function Communications() {
   const send = async () => {
     if (!body) return;
     const recipients = mode === "bulk" ? users.length : 1;
-    let emailStatus = "";
+
     if (channel === "Email") {
       try {
         const selected = users.find((u) => u.id === recipientId);
@@ -38,19 +38,21 @@ export default function Communications() {
           html: body.replace(/\n/g, "<br />"),
           scheduledAt: schedule || undefined,
         });
-        emailStatus = " Email sent through Resend.";
+        addNotification({ title: "Email Sent", body: `Email delivered via Resend to ${recipients} recipient(s).`, channel: "Email", type: "success" });
+        setSent(`✅ Email sent via Resend to ${recipients} recipient(s).`);
       } catch (error) {
-        emailStatus = ` Resend failed: ${error instanceof Error ? error.message : "server endpoint not configured"}. If using onboarding@resend.dev, send only to the verified Resend account email or verify your own domain.`;
+        const msg = error instanceof Error ? error.message : "Email backend not available";
+        addNotification({ title: "Email FAILED", body: msg, channel: "Email", type: "alert" });
+        setSent(`❌ Email NOT sent: ${msg}`);
+        setTimeout(() => setSent(null), 12000);
+        return; // do not clear the form so the user can retry
       }
+    } else {
+      addNotification({ title: "WhatsApp Broadcast Queued", body: `Queued for ${recipients} recipient(s).`, channel: "WhatsApp", type: "info" });
+      setSent(`WhatsApp queued for ${recipients} recipient(s).`);
     }
-    addNotification({
-      title: `${channel} ${mode === "bulk" ? "Broadcast" : "Message"} Sent`,
-      body: `Sent to ${recipients} recipient${recipients > 1 ? "s" : ""}.${schedule ? ` Scheduled for ${schedule}.` : ""}${emailStatus}`,
-      channel,
-      type: "success",
-    });
-    setSent(`${channel} sent to ${recipients} recipient${recipients > 1 ? "s" : ""}.${schedule ? ` Scheduled for ${schedule}.` : ""}${emailStatus}`);
-    setTimeout(() => setSent(null), 3000);
+
+    setTimeout(() => setSent(null), 8000);
     setBody("");
     setSubject("");
   };
@@ -66,8 +68,7 @@ export default function Communications() {
           <Mail className="h-4 w-4 text-indigo-500" />
           <span className="font-semibold">Email Provider:</span>
           <span className="font-mono">Resend</span>
-          <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 ml-1" />
-          <span className="text-emerald-600 dark:text-emerald-400">Connected</span>
+          <span className="text-slate-500">· works only on Vercel deploy</span>
         </div>
       </div>
 
