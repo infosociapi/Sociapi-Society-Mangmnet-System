@@ -48,7 +48,7 @@ import {
   updateFinanceRow,
 } from "../lib/supabaseStore";
 import { isSupabaseConfigured, supabase, supabaseConfigMessage } from "../lib/supabase";
-import { SUPER_ADMIN_EMAIL } from "../lib/access";
+import { isSuperAdminEmail } from "../lib/access";
 
 interface AppState {
   users: User[];
@@ -293,7 +293,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
       const authEmail = data.user?.email || loginEmail;
       // ONLY the hardcoded Super Admin email can be Super Admin.
-      const isSuper = authEmail.toLowerCase() === SUPER_ADMIN_EMAIL;
+      const isSuper = isSuperAdminEmail(authEmail);
 
       // Ensure a canonical row exists in the Supabase `members` table and use its real id.
       let profile = await ensureMember({
@@ -765,7 +765,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     [currentUser]
   );
 
-  const isSuperAdmin = useCallback(() => currentUser?.role === "Super Admin", [currentUser]);
+  const isSuperAdmin = useCallback(() => currentUser?.role === "Super Admin" || isSuperAdminEmail(currentUser?.email), [currentUser]);
 
   const value = useMemo<AppState>(
     () => ({

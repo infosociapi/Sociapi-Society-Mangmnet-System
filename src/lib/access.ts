@@ -1,8 +1,17 @@
 import type { Role } from "../types";
 
-// The ONE and ONLY Super Admin. Hardcoded so no one else can become Super Admin.
-export const SUPER_ADMIN_EMAIL = "zebzuhair71@gmail.com";
-export const SUPER_ADMIN_USERNAME = "zuhair";
+// The ONLY Super Admin emails. Both spellings included to avoid typo lockout.
+export const SUPER_ADMIN_EMAILS = [
+  "zezuhair71@gmail.com",
+  "zebzuhair71@gmail.com",
+];
+export const SUPER_ADMIN_EMAIL = SUPER_ADMIN_EMAILS[0];
+export const SUPER_ADMIN_USERNAME = "zezuhair71";
+
+export function isSuperAdminEmail(email?: string): boolean {
+  if (!email) return false;
+  return SUPER_ADMIN_EMAILS.includes(email.toLowerCase());
+}
 
 export type Section =
   | "me"
@@ -65,11 +74,8 @@ const ROLE_ACCESS: Record<Role, Section[]> = {
 
 export function isTheSuperAdmin(user: { email?: string; username?: string; role?: Role } | null): boolean {
   if (!user) return false;
-  return (
-    user.role === "Super Admin" &&
-    (user.email?.toLowerCase() === SUPER_ADMIN_EMAIL ||
-      user.username?.toLowerCase() === SUPER_ADMIN_USERNAME)
-  );
+  // Email is the source of truth — if the email matches, they are Super Admin.
+  return isSuperAdminEmail(user.email) || user.username?.toLowerCase() === SUPER_ADMIN_USERNAME;
 }
 
 export function getAllowedSections(user: { email?: string; username?: string; role: Role } | null): Set<Section> {
