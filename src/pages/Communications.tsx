@@ -1,8 +1,41 @@
 import { useState } from "react";
-import { Avatar, Badge, Button, Card, Input, Label, Select, Textarea } from "../components/ui";
+import { Avatar, Badge, Button, Card, Input, Label, Modal, Select, Textarea } from "../components/ui";
 import { useApp } from "../context/AppContext";
 import { Calendar, Mail, MessageCircle, Plus, Send, Sparkles } from "lucide-react";
 import { sendMailjetEmail } from "../lib/mailjet";
+
+type MessageTemplate = {
+  id: string;
+  name: string;
+  channel: "Email" | "WhatsApp";
+  subject?: string;
+  body: string;
+};
+
+// Starter templates so the panel isn't empty out of the box.
+// Create more anytime with the "New" button — they're saved for this session.
+const STARTER_TEMPLATES: MessageTemplate[] = [
+  {
+    id: "starter-welcome",
+    name: "Welcome New Member",
+    channel: "Email",
+    subject: "Welcome to Sociapi Society!",
+    body: "Hi {{name}},\n\nWelcome aboard! We're thrilled to have you as part of Sociapi Society. Your member ID is {{memberId}}.\n\nSee you at the next event!\n\nBest,\nSociapi Team",
+  },
+  {
+    id: "starter-event-reminder",
+    name: "Event Reminder",
+    channel: "WhatsApp",
+    body: "Hi {{name}}! 👋 Quick reminder: {{event}} is coming up soon. We'd love to see you there. Reply to confirm your spot.",
+  },
+  {
+    id: "starter-dues-reminder",
+    name: "Membership Dues Reminder",
+    channel: "Email",
+    subject: "Friendly reminder: membership dues",
+    body: "Hi {{name}},\n\nThis is a friendly reminder that your membership dues are due by {{deadline}}. Please clear your dues to keep enjoying full member benefits.\n\nThanks,\nSociapi Team",
+  },
+];
 
 export default function Communications() {
   const { users, templates, addNotification, hasPermission } = useApp();
@@ -15,8 +48,15 @@ export default function Communications() {
   const [schedule, setSchedule] = useState("");
   const [sent, setSent] = useState<string | null>(null);
 
+  // Custom templates created in this session, merged with whatever the backend already provides.
+  const [customTemplates, setCustomTemplates] = useState<MessageTemplate[]>(STARTER_TEMPLATES);
+  const [templateModalOpen, setTemplateModalOpen] = useState(false);
+  const [newTemplate, setNewTemplate] = useState<MessageTemplate>({ id: "", name: "", channel: "Email", subject: "", body: "" });
+
+  const allTemplates: MessageTemplate[] = [...(templates as unknown as MessageTemplate[]), ...customTemplates];
+
   const useTemplate = (id: string) => {
-    const t = templates.find((x) => x.id === id);
+    const t = allTemplates.find((x) => x.id === id);
     if (t) {
       setChannel(t.channel);
       setSubject(t.subject || "");
@@ -24,9 +64,22 @@ export default function Communications() {
     }
   };
 
+  const createTemplate = () => {
+    if (!newTemplate.name || !newTemplate.body) return;
+    setCustomTemplates((prev) => [...prev, { ...newTemplate, id: `tpl-${Date.now()}` }]);
+    setNewTemplate({ id: "", name: "", channel: "Email", subject: "", body: "" });
+    setTemplateModalOpen(false);
+  };
+
+  const removeCustomTemplate = (id: string) => {
+    setCustomTemplates((prev) => prev.filter((t) => t.id !== id));
+  };
+
+  const recipientsWithPhone = users.filter((u) => !!u.phone);
+
   const send = async () => {
     if (!body) return;
-    const recipients = mode === "bulk" ? users.length : 1;
+    const recipients = mode === "bulk" ? (channel === "WhatsApp" ? recipientsWithPhone.length : users.length) : 1;
 
     if (channel === "Email") {
       try {
@@ -48,8 +101,10 @@ export default function Communications() {
         return; // do not clear the form so the user can retry
       }
     } else {
-      addNotification({ title: "WhatsApp Broadcast Queued", body: `Queued for ${recipients} recipient(s).`, channel: "WhatsApp", type: "info" });
-      setSent(`WhatsApp queued for ${recipients} recipient(s).`);
+      const selected = users.find((u) => u.id === recipientId);
+      const target = mode === "bulk" ? `${recipients} number(s)` : selected?.phone || "no number on file";
+      addNotification({ title: "WhatsApp Broadcast Queued", body: `Queued for ${target}.`, channel: "WhatsApp", type: "info" });
+      setSent(`WhatsApp queued for ${target}.`);
     }
 
     setTimeout(() => setSent(null), 8000);
@@ -90,13 +145,24 @@ export default function Communications() {
             <div className="mb-4">
               <Label>Recipient</Label>
               <Select value={recipientId} onChange={(e) => setRecipientId(e.target.value)}>
-                {users.map((u) => <option key={u.id} value={u.id}>{u.name} — {u.email}</option>)}
+                {users.map((u) => (
+                  <option key={u.id} value={u.id}>
+                    {u.name} — {channel === "WhatsApp" ? (u.phone || "no number on file") : u.email}
+                  </option>
+                ))}
               </Select>
+              {channel === "WhatsApp" && !users.find((u) => u.id === recipientId)?.phone && (
+                <p className="text-xs text-amber-600 mt-1">This member has no phone number on file.</p>
+              )}
             </div>
           )}
           {mode === "bulk" && (
             <div className="mb-4 px-3 py-2 rounded-xl bg-indigo-500/10 ring-1 ring-indigo-500/20 text-sm text-indigo-700 dark:text-indigo-300">
-              Broadcasting to <strong>{users.length}</strong> members.
+              {channel === "WhatsApp" ? (
+                <>Broadcasting to <strong>{recipientsWithPhone.length}</strong> member(s) with a phone number on file.</>
+              ) : (
+                <>Broadcasting to <strong>{users.length}</strong> members.</>
+              )}
             </div>
           )}
 
@@ -132,17 +198,23 @@ export default function Communications() {
         <Card className="p-6">
           <div className="flex items-center justify-between mb-4">
             <p className="font-semibold">Message Templates</p>
-            <Button size="sm" variant="ghost" icon={<Plus className="h-3 w-3" />}>New</Button>
+            <Button size="sm" variant="ghost" icon={<Plus className="h-3 w-3" />} onClick={() => setTemplateModalOpen(true)}>New</Button>
           </div>
           <div className="space-y-2">
-            {templates.map((t) => (
-              <button key={t.id} onClick={() => useTemplate(t.id)} className="w-full text-left p-3 rounded-xl hover:bg-slate-100/60 dark:hover:bg-white/5 border border-slate-200/60 dark:border-white/10">
-                <div className="flex items-center justify-between">
-                  <p className="text-sm font-semibold">{t.name}</p>
-                  <Badge tone={t.channel === "Email" ? "indigo" : "emerald"}>{t.channel}</Badge>
-                </div>
-                <p className="text-xs text-slate-500 mt-1 line-clamp-2">{t.body}</p>
-              </button>
+            {allTemplates.length === 0 && <p className="text-sm text-slate-500 text-center py-6">No templates yet. Create one with "New".</p>}
+            {allTemplates.map((t) => (
+              <div key={t.id} className="w-full p-3 rounded-xl hover:bg-slate-100/60 dark:hover:bg-white/5 border border-slate-200/60 dark:border-white/10">
+                <button onClick={() => useTemplate(t.id)} className="w-full text-left">
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm font-semibold">{t.name}</p>
+                    <Badge tone={t.channel === "Email" ? "indigo" : "emerald"}>{t.channel}</Badge>
+                  </div>
+                  <p className="text-xs text-slate-500 mt-1 line-clamp-2">{t.body}</p>
+                </button>
+                {customTemplates.some((c) => c.id === t.id) && (
+                  <button onClick={() => removeCustomTemplate(t.id)} className="text-xs text-rose-500 hover:underline mt-2">Remove</button>
+                )}
+              </div>
             ))}
           </div>
         </Card>
@@ -159,6 +231,37 @@ export default function Communications() {
           ))}
         </div>
       </Card>
+
+      <Modal open={templateModalOpen} onClose={() => setTemplateModalOpen(false)} title="New Message Template">
+        <div className="space-y-4">
+          <div>
+            <Label>Template Name</Label>
+            <Input value={newTemplate.name} onChange={(e) => setNewTemplate({ ...newTemplate, name: e.target.value })} placeholder="e.g. Event Reminder" />
+          </div>
+          <div>
+            <Label>Channel</Label>
+            <Select value={newTemplate.channel} onChange={(e) => setNewTemplate({ ...newTemplate, channel: e.target.value as "Email" | "WhatsApp" })}>
+              <option>Email</option>
+              <option>WhatsApp</option>
+            </Select>
+          </div>
+          {newTemplate.channel === "Email" && (
+            <div>
+              <Label>Subject</Label>
+              <Input value={newTemplate.subject || ""} onChange={(e) => setNewTemplate({ ...newTemplate, subject: e.target.value })} placeholder="Email subject" />
+            </div>
+          )}
+          <div>
+            <Label>Body</Label>
+            <Textarea value={newTemplate.body} onChange={(e) => setNewTemplate({ ...newTemplate, body: e.target.value })} rows={6} placeholder="Type your template message…" />
+            <p className="text-xs text-slate-500 mt-1">Variables: {"{{name}}, {{memberId}}, {{event}}, {{deadline}}"}</p>
+          </div>
+        </div>
+        <div className="flex justify-end gap-2 mt-6">
+          <Button variant="ghost" onClick={() => setTemplateModalOpen(false)}>Cancel</Button>
+          <Button onClick={createTemplate}>Save Template</Button>
+        </div>
+      </Modal>
     </div>
   );
 }
