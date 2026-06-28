@@ -10,6 +10,7 @@ import Dashboard from "./pages/Dashboard";
 import Members from "./pages/Members";
 import Tasks from "./pages/Tasks";
 import Attendance from "./pages/Attendance";
+import AttendanceReport from "./pages/AttendanceReport";
 import Events from "./pages/Events";
 import Finance from "./pages/Finance";
 import HR from "./pages/HR";
@@ -75,6 +76,7 @@ export default function App() {
             <Route path="departments" element={<RequireAccess section="departments"><Departments /></RequireAccess>} />
             <Route path="tasks" element={<RequireAccess section="tasks"><Tasks /></RequireAccess>} />
             <Route path="attendance" element={<RequireAccess section="attendance"><Attendance /></RequireAccess>} />
+            <Route path="attendance-report" element={<RequireAccess section="attendance"><AttendanceReport /></RequireAccess>} />
             <Route path="events" element={<RequireAccess section="events"><Events /></RequireAccess>} />
             <Route path="finance" element={<RequireAccess section="finance"><Finance /></RequireAccess>} />
             <Route path="hr" element={<RequireAccess section="hr"><HR /></RequireAccess>} />

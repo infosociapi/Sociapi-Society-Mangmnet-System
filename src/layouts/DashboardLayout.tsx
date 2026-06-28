@@ -75,6 +75,7 @@ const orgNav: { to: string; label: string; icon: any; section: Section }[] = [
   { to: "/app/departments", label: "Departments", icon: Building2, section: "departments" },
   { to: "/app/tasks", label: "Tasks", icon: CheckSquare, section: "tasks" },
   { to: "/app/attendance", label: "Attendance", icon: ClipboardCheck, section: "attendance" },
+  { to: "/app/attendance-report", label: "Attendance Report", icon: ClipboardCheck, section: "attendance" },
   { to: "/app/events", label: "Events", icon: CalendarDays, section: "events" },
   { to: "/app/finance", label: "Finance", icon: DollarSign, section: "finance" },
   { to: "/app/hr", label: "HR", icon: Briefcase, section: "hr" },
