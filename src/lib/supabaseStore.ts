@@ -276,6 +276,18 @@ export async function deleteChatMessage(id: string) {
   if (error) throw error;
 }
 
+export async function insertAttendance(rec: AttendanceRecord) {
+  if (!isSupabaseConfigured) return;
+  const { error } = await supabase.from("attendance").insert({
+    member_id: rec.userId,
+    event_id: rec.eventId || null,
+    method: rec.method,
+    status: rec.status,
+    created_at: rec.date,
+  });
+  if (error) throw error;
+}
+
 export async function clearChatThread(opts: { team?: string; a?: string; b?: string }) {
   if (!isSupabaseConfigured) return;
   if (opts.team) {
