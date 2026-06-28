@@ -15,9 +15,8 @@ export default function IDCard() {
     if (!currentUser) return;
     const payload = JSON.stringify({
       memberId: currentUser.memberId,
-      specialNumber: currentUser.specialNumber,
+      username: currentUser.username,
       name: currentUser.name,
-      org: "Sociapi Society ERP",
     });
     QRCode.toDataURL(payload, { width: 320, margin: 1, color: { dark: "#0f172a", light: "#ffffff" } })
       .then(setQr)
@@ -248,14 +247,10 @@ export default function IDCard() {
               </div>
 
               {/* Footer */}
-              <div className="mt-auto pt-4 grid grid-cols-3 gap-2 text-[10px]">
+              <div className="mt-auto pt-4 grid grid-cols-2 gap-2 text-[10px]">
                 <div>
                   <p className="uppercase tracking-widest opacity-70">Member ID</p>
                   <p className="font-bold text-xs">{currentUser.memberId}</p>
-                </div>
-                <div>
-                  <p className="uppercase tracking-widest opacity-70">Special No</p>
-                  <p className="font-bold text-xs">{currentUser.specialNumber}</p>
                 </div>
                 <div>
                   <p className="uppercase tracking-widest opacity-70">Joined</p>
@@ -263,7 +258,7 @@ export default function IDCard() {
                 </div>
               </div>
               <div className="mt-2 flex items-center justify-between text-[9px] opacity-80">
-                <span>sociapi.nexus</span>
+                <span>linktr.ee/sociapisociety</span>
                 <span>Authorized credential — non-transferable</span>
               </div>
             </div>
