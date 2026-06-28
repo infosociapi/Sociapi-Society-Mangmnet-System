@@ -23,7 +23,7 @@ export default function MyDashboard() {
         <div className="absolute -right-12 -top-12 w-80 h-80 rounded-full soc-bg-soft blur-3xl" />
         <div className="relative p-6 lg:p-8 flex flex-wrap items-center gap-6 justify-between">
           <div className="flex items-center gap-5">
-            <Avatar name={currentUser.name} gradient={currentUser.avatar} size={88} />
+            <Avatar name={currentUser.name} gradient={currentUser.avatar} src={currentUser.photoUrl} size={88} />
             <div>
               <Badge tone={currentUser.role === "Super Admin" ? "fuchsia" : "indigo"} className="mb-2">
                 {currentUser.role === "Super Admin" && <Sparkles className="h-3 w-3" />} {currentUser.role}

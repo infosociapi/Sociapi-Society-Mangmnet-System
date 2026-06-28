@@ -132,7 +132,7 @@ export default function DashboardLayout() {
           </nav>
           <div className="p-3 border-t border-slate-200/60 dark:border-white/10">
             <div className="flex items-center gap-3 p-2 rounded-xl bg-slate-100/60 dark:bg-white/5">
-              <Avatar name={currentUser.name} gradient={currentUser.avatar} />
+              <Avatar name={currentUser.name} gradient={currentUser.avatar} src={currentUser.photoUrl} size={40} />
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-semibold truncate">{currentUser.name}</p>
                 <p className="text-xs text-slate-500 truncate">{currentUser.role}</p>
@@ -177,43 +177,43 @@ export default function DashboardLayout() {
                 className="h-10 w-10 rounded-xl hover:bg-slate-200/60 dark:hover:bg-white/10 flex items-center justify-center relative"
               >
                 <Bell className="h-4 w-4" />
-                {unread > 0 && (
-                  <span className="absolute top-1.5 right-1.5 h-2 w-2 rounded-full bg-rose-500 ring-2 ring-white dark:ring-slate-900" />
-                )}
-              </button>
-              {notifOpen && (
-                <div className="absolute right-0 mt-2 w-80 glass-strong rounded-2xl shadow-xl overflow-hidden">
-                  <div className="px-4 py-3 border-b border-slate-200/60 dark:border-white/10 flex items-center justify-between">
-                    <p className="font-semibold text-sm">Notifications</p>
-                    <Badge tone="indigo">{notifications.length}</Badge>
-                  </div>
-                  <div className="max-h-80 overflow-y-auto divide-y divide-slate-200/60 dark:divide-white/5">
-                    {notifications.slice(0, 8).map((n) => (
-                      <div key={n.id} className="px-4 py-3 hover:bg-slate-100/60 dark:hover:bg-white/5">
-                        <div className="flex items-start justify-between gap-2">
-                          <p className="text-sm font-medium">{n.title}</p>
-                          <Badge
-                            tone={n.type === "warning" ? "amber" : n.type === "success" ? "emerald" : n.type === "alert" ? "rose" : "indigo"}
-                          >
-                            {n.channel}
-                          </Badge>
-                        </div>
-                        <p className="text-xs text-slate-500 mt-1">{n.body}</p>
-                      </div>
-                    ))}
-                  </div>
-                </div>
+              {unread > 0 && (
+                <span className="absolute top-1.5 right-1.5 h-2 w-2 rounded-full bg-rose-500 ring-2 ring-white dark:ring-slate-900" />
               )}
-            </div>
-            <div className="hidden md:flex items-center gap-2 pl-2 border-l border-slate-200 dark:border-white/10">
-              <Avatar name={currentUser.name} gradient={currentUser.avatar} size={36} />
-              <div className="leading-tight">
-                <p className="text-sm font-semibold">{currentUser.name.split("(")[0]}</p>
-                <p className="text-xs text-slate-500">{currentUser.memberId}</p>
+            </button>
+            {notifOpen && (
+              <div className="absolute right-0 mt-2 w-80 glass-strong rounded-2xl shadow-xl overflow-hidden">
+                <div className="px-4 py-3 border-b border-slate-200/60 dark:border-white/10 flex items-center justify-between">
+                  <p className="font-semibold text-sm">Notifications</p>
+                  <Badge tone="indigo">{notifications.length}</Badge>
+                </div>
+                <div className="max-h-80 overflow-y-auto divide-y divide-slate-200/60 dark:divide-white/5">
+                  {notifications.slice(0, 8).map((n) => (
+                    <div key={n.id} className="px-4 py-3 hover:bg-slate-100/60 dark:hover:bg-white/5">
+                      <div className="flex items-start justify-between gap-2">
+                        <p className="text-sm font-medium">{n.title}</p>
+                        <Badge
+                          tone={n.type === "warning" ? "amber" : n.type === "success" ? "emerald" : n.type === "alert" ? "rose" : "indigo"}
+                        >
+                          {n.channel}
+                        </Badge>
+                      </div>
+                      <p className="text-xs text-slate-500 mt-1">{n.body}</p>
+                    </div>
+                  ))}
+                </div>
               </div>
+            )}
+          </div>
+          <div className="hidden md:flex items-center gap-2 pl-2 border-l border-slate-200 dark:border-white/10">
+            <Avatar name={currentUser.name} gradient={currentUser.avatar} src={currentUser.photoUrl} size={36} />
+            <div className="leading-tight">
+              <p className="text-sm font-semibold">{currentUser.name.split("(")[0]}</p>
+              <p className="text-xs text-slate-500">{currentUser.memberId}</p>
             </div>
           </div>
-        </header>
+        </div>
+      </header>
 
         <main className="flex-1 p-3 lg:p-6">
           <Outlet />
