@@ -35,7 +35,6 @@ import {
   deleteFinanceRow,
   deleteMemberRow,
   ensureMember,
-  insertAttendance,
   insertChatMessage,
   insertEvent,
   insertFinance,
@@ -113,7 +112,7 @@ interface AppState {
   addNotification: (n: Omit<NotificationItem, "id" | "createdAt" | "read">) => void;
   markAllRead: () => void;
 
-  markAttendance: (userId: string, method: AttendanceRecord["method"], status: AttendanceRecord["status"], eventId?: string) => { ok: boolean; duplicate?: boolean };
+  markAttendance: (userId: string, method: AttendanceRecord["method"], status: AttendanceRecord["status"], eventId?: string, date?: string) => { ok: boolean; duplicate?: boolean };
 
   logActivity: (action: string, category: ActivityLog["category"], target?: string) => void;
   hasPermission: (perm: Permission) => boolean;
@@ -723,12 +722,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setState((s) => ({ ...s, notifications: s.notifications.map((n) => ({ ...n, read: true })) }));
 
   // attendance with dedup per day & event scope
-  const markAttendance: AppState["markAttendance"] = (userId, method, status, eventId) => {
+  const markAttendance: AppState["markAttendance"] = (userId, method, status, eventId, date) => {
     let duplicate = false;
-    const todayStr = new Date().toDateString();
+    const targetDate = date ? new Date(date).toDateString() : new Date().toDateString();
     setState((s) => {
       const exists = s.attendance.find(
-        (a) => a.userId === userId && new Date(a.date).toDateString() === todayStr && (eventId ? a.eventId === eventId : !a.eventId)
+        (a) => a.userId === userId && new Date(a.date).toDateString() === targetDate && (eventId ? a.eventId === eventId : !a.eventId)
       );
       if (exists) {
         duplicate = true;
@@ -736,9 +735,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
       }
       const rec: AttendanceRecord = { id: "att-" + Date.now() + Math.random(), userId, date: new Date().toISOString(), method, status, eventId };
       const points = status === "Present" ? 5 : status === "Late" ? 2 : 0;
-      
-      if (isSupabaseConfigured) insertAttendance(rec).catch((error) => console.error("Attendance insert failed", error));
-
       // recompute attendance % per user across all recs
       const allRecs = [rec, ...s.attendance];
       const recompute = (u: User) => {
