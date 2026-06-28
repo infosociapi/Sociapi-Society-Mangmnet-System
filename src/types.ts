@@ -17,6 +17,7 @@ export interface User {
   specialNumber: string;
   name: string;
   email: string;
+  photoUrl?: string;
   createdBy?: string;
   createdAt?: string;
   lastLogin?: string;

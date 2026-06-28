@@ -46,6 +46,7 @@ import {
   saveErpState,
   updateEventRow,
   updateFinanceRow,
+  updateMemberRow,
 } from "../lib/supabaseStore";
 import { isSupabaseConfigured, supabase, supabaseConfigMessage } from "../lib/supabase";
 import { isSuperAdminEmail } from "../lib/access";
@@ -501,8 +502,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
       return { ...s, users: [...s.users, newUser] };
     });
   const updateUser: AppState["updateUser"] = (id, patch) => {
+    const depId = state.departments.find((d) => d.name === patch.department)?.id || null;
     setState((s) => ({ ...s, users: s.users.map((u) => (u.id === id ? { ...u, ...patch } : u)) }));
     if (currentUser?.id === id) setCurrentUser((cu) => (cu ? { ...cu, ...patch } : cu));
+    if (isSupabaseConfigured) updateMemberRow(id, patch, depId).catch((error) => console.error("Member update failed", error));
     _log(currentUser, `Updated member`, "members", id);
   };
   const deleteUser: AppState["deleteUser"] = (id) => {

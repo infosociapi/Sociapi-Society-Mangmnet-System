@@ -60,6 +60,7 @@ export async function loadErpState(): Promise<ErpStateSnapshot | null> {
     specialNumber: m.special_number,
     name: m.name,
     email: m.email,
+    photoUrl: m.profile_photo_url || undefined,
     phone: m.phone || "",
     role: m.role,
     position: m.position,
@@ -128,6 +129,7 @@ export async function saveErpState(data: ErpStateSnapshot): Promise<void> {
       name: u.name,
       email: u.email,
       phone: u.phone || null,
+      profile_photo_url: u.photoUrl || null,
       role: u.role,
       department_id: depId(u.department),
       position: u.position,
@@ -316,6 +318,7 @@ export async function loadMembers(): Promise<User[]> {
     specialNumber: m.special_number,
     name: m.name,
     email: m.email,
+    photoUrl: m.profile_photo_url || undefined,
     phone: m.phone || "",
     role: m.role,
     position: m.position,
@@ -343,6 +346,7 @@ function mapMemberRow(m: any, departments: any[]): User {
     specialNumber: m.special_number,
     name: m.name,
     email: m.email,
+    photoUrl: m.profile_photo_url || undefined,
     phone: m.phone || "",
     role: m.role,
     position: m.position,
@@ -431,4 +435,23 @@ export async function callSupabaseAdmin(action: string, payload: Record<string, 
   const json = text ? JSON.parse(text) : {};
   if (!response.ok) throw new Error(json.error || "Supabase admin function failed");
   return json;
+}
+
+export async function updateMemberRow(id: string, member: Partial<User>, depId: string | null) {
+  if (!isSupabaseConfigured || !isUuid(id)) return;
+  const { error } = await supabase.from("members").update({
+    username: member.username,
+    name: member.name,
+    email: member.email,
+    phone: member.phone,
+    role: member.role,
+    department_id: depId,
+    position: member.position,
+    status: member.status,
+    profile_photo_url: member.photoUrl,
+    attendance: member.attendance,
+    points: member.points,
+    performance_score: member.performanceScore,
+  }).eq("id", id);
+  if (error) throw error;
 }
