@@ -79,32 +79,102 @@ export default function Communications() {
 
   const send = async () => {
     if (!body) return;
-    const recipients = mode === "bulk" ? (channel === "WhatsApp" ? recipientsWithPhone.length : users.length) : 1;
 
-    if (channel === "Email") {
-      try {
+    const baseUrl = import.meta.env.VITE_SUPABASE_URL;
+    const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+
+    try {
+      // -------------------------
+      // EMAIL FLOW
+      // -------------------------
+      if (channel === "Email") {
         const selected = users.find((u) => u.id === recipientId);
-        const to = mode === "bulk" ? users.map((u) => u.email) : selected?.email || "sociapisociety@gmail.com";
+
+        const emailRecipients =
+          mode === "bulk"
+            ? users.map((u) => u.email).filter(Boolean)
+            : selected?.email
+              ? [selected.email]
+              : [];
+
         await sendMailjetEmail({
-          to,
+          to: emailRecipients,
           subject: subject || "Sociapi Society ERP Notice",
           html: body.replace(/\n/g, "<br />"),
           scheduledAt: schedule || undefined,
         });
-        addNotification({ title: "Email Sent", body: `Email delivered via Mailjet to ${recipients} recipient(s).`, channel: "Email", type: "success" });
-        setSent(`✅ Email sent via Mailjet to ${recipients} recipient(s).`);
-      } catch (error) {
-        const msg = error instanceof Error ? error.message : "Email backend not available";
-        addNotification({ title: "Email FAILED", body: msg, channel: "Email", type: "alert" });
-        setSent(`❌ Email NOT sent: ${msg}`);
-        setTimeout(() => setSent(null), 12000);
-        return; // do not clear the form so the user can retry
+
+        addNotification({
+          title: "Email Sent",
+          body: `Sent to ${emailRecipients.length} members`,
+          channel: "Email",
+          type: "success",
+        });
+
+        setSent(`✅ Email sent to ${emailRecipients.length} members`);
       }
-    } else {
-      const selected = users.find((u) => u.id === recipientId);
-      const target = mode === "bulk" ? `${recipients} number(s)` : selected?.phone || "no number on file";
-      addNotification({ title: "WhatsApp Broadcast Queued", body: `Queued for ${target}.`, channel: "WhatsApp", type: "info" });
-      setSent(`WhatsApp queued for ${target}.`);
+
+      // -------------------------
+      // WHATSAPP FLOW
+      // -------------------------
+      else {
+        const recipients =
+          mode === "bulk"
+            ? users.filter((u) => u.phone)
+            : users.filter((u) => u.id === recipientId && u.phone);
+
+        if (recipients.length === 0) {
+          addNotification({
+            title: "WhatsApp Failed",
+            body: "No valid phone numbers found",
+            channel: "WhatsApp",
+            type: "alert",
+          });
+          setSent("❌ No phone numbers found");
+          return;
+        }
+
+        // Send via Supabase Edge Function
+        const results = [];
+
+        for (const member of recipients) {
+          const res = await fetch(`${baseUrl}/functions/v1/send-whatsapp`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              apikey: anonKey,
+              Authorization: `Bearer ${anonKey}`,
+            },
+            body: JSON.stringify({
+              to: member.phone!.replace("+", ""),
+              message: body
+                .replace("{{name}}", member.name)
+                .replace("{{memberId}}", member.memberId || ""),
+            }),
+          });
+
+          const data = await res.json();
+          results.push(data);
+        }
+
+        addNotification({
+          title: "WhatsApp Sent",
+          body: `Sent to ${recipients.length} members`,
+          channel: "WhatsApp",
+          type: "success",
+        });
+
+        setSent(`✅ WhatsApp sent to ${recipients.length} members`);
+      }
+    } catch (error) {
+      addNotification({
+        title: "Communication Failed",
+        body: error instanceof Error ? error.message : "Unknown error",
+        channel: channel,
+        type: "alert",
+      });
+
+      setSent("❌ Sending failed");
     }
 
     setTimeout(() => setSent(null), 8000);
