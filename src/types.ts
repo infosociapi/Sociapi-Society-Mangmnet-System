@@ -135,7 +135,7 @@ export interface AttendanceRecord {
   date: string;
   method: "Manual" | "QR" | "Event";
   eventId?: string;
-  status: "Present" | "Absent" | "Late";
+  status: "Present" | "Absent" | "Late" | "Excused";
 }
 
 export interface ActivityLog {

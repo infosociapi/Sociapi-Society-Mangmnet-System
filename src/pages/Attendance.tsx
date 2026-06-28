@@ -54,7 +54,7 @@ export default function Attendance() {
     return total ? Math.round((present / total) * 100) : 0;
   }, [attendance]);
 
-  const handleQrScan = () => {
+  const handleQrScan = async () => {
     let lookup = scanInput.trim();
     try {
       const parsed = JSON.parse(lookup);

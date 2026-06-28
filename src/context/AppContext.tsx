@@ -35,6 +35,7 @@ import {
   deleteFinanceRow,
   deleteMemberRow,
   ensureMember,
+  insertAttendance,
   insertChatMessage,
   insertEvent,
   insertFinance,
@@ -44,6 +45,7 @@ import {
   loadFinance,
   loadMembers,
   saveErpState,
+  updateAttendanceRow,
   updateEventRow,
   updateFinanceRow,
   updateMemberRow,
@@ -112,7 +114,8 @@ interface AppState {
   addNotification: (n: Omit<NotificationItem, "id" | "createdAt" | "read">) => void;
   markAllRead: () => void;
 
-  markAttendance: (userId: string, method: AttendanceRecord["method"], status: AttendanceRecord["status"], eventId?: string) => { ok: boolean; duplicate?: boolean };
+  markAttendance: (userId: string, method: AttendanceRecord["method"], status: AttendanceRecord["status"], eventId?: string, date?: string) => Promise<{ ok: boolean; duplicate?: boolean }>;
+  updateAttendance: (id: string, status: AttendanceRecord["status"]) => void;
 
   logActivity: (action: string, category: ActivityLog["category"], target?: string) => void;
   hasPermission: (perm: Permission) => boolean;
@@ -722,20 +725,22 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setState((s) => ({ ...s, notifications: s.notifications.map((n) => ({ ...n, read: true })) }));
 
   // attendance with dedup per day & event scope
-  const markAttendance: AppState["markAttendance"] = (userId, method, status, eventId) => {
+  const markAttendance: AppState["markAttendance"] = async (userId, method, status, eventId, date = new Date().toISOString()) => {
     let duplicate = false;
-    const todayStr = new Date().toDateString();
+    const dateStr = new Date(date).toDateString();
+    
+    // Check local state for duplicate
+    const exists = state.attendance.find(
+      (a) => a.userId === userId && new Date(a.date).toDateString() === dateStr && (eventId ? a.eventId === eventId : !a.eventId)
+    );
+    if (exists) return { ok: false, duplicate: true };
+
+    const rec: AttendanceRecord = { id: "att-" + Date.now() + Math.random(), userId, date, method, status, eventId };
+    if (isSupabaseConfigured) await insertAttendance(rec);
+
+    const points = status === "Present" ? 5 : status === "Late" ? 2 : 0;
+    
     setState((s) => {
-      const exists = s.attendance.find(
-        (a) => a.userId === userId && new Date(a.date).toDateString() === todayStr && (eventId ? a.eventId === eventId : !a.eventId)
-      );
-      if (exists) {
-        duplicate = true;
-        return s;
-      }
-      const rec: AttendanceRecord = { id: "att-" + Date.now() + Math.random(), userId, date: new Date().toISOString(), method, status, eventId };
-      const points = status === "Present" ? 5 : status === "Late" ? 2 : 0;
-      // recompute attendance % per user across all recs
       const allRecs = [rec, ...s.attendance];
       const recompute = (u: User) => {
         const mine = allRecs.filter((a) => a.userId === u.id);
@@ -756,8 +761,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
       );
       return { ...s, attendance: allRecs, users };
     });
-    if (!duplicate) _log(currentUser, `Marked attendance for member`, "attendance", userId);
-    return { ok: !duplicate, duplicate };
+    _log(currentUser, `Marked attendance for member`, "attendance", userId);
+    return { ok: true, duplicate: false };
+  };
+
+  const updateAttendance: AppState["updateAttendance"] = (id, status) => {
+    setState((s) => ({ ...s, attendance: s.attendance.map((a) => (a.id === id ? { ...a, status } : a)) }));
+    if (isSupabaseConfigured) updateAttendanceRow(id, status).catch(console.error);
+    _log(currentUser, `Updated attendance`, "attendance", id);
   };
 
   const hasPermission = useCallback(
@@ -813,11 +824,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
       addNotification,
       markAllRead,
       markAttendance,
+      updateAttendance,
       logActivity,
       hasPermission,
       isSuperAdmin,
     }),
-    [state, currentUser, theme, setTheme, toggleTheme, login, logout, register, forgotPassword, resetPassword, changePassword, hasPermission, isSuperAdmin, logActivity]
+    [state, currentUser, theme, setTheme, toggleTheme, login, logout, register, forgotPassword, resetPassword, changePassword, hasPermission, isSuperAdmin, logActivity, markAttendance, updateAttendance]
   );
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
