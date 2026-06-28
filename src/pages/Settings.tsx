@@ -46,7 +46,7 @@ export default function Settings() {
     try {
       let photoUrl: string | undefined;
       if (photoFile) {
-        photoUrl = await uploadToSupabaseStorage(`avatars/${currentUser.id}-${Date.now()}-${photoFile.name}`, photoFile);
+        photoUrl = await uploadToSupabaseStorage(`avatars-${currentUser.id}-${Date.now()}-${photoFile.name}`, photoFile);
       }
       updateUser(currentUser.id, {
         name: profile.name,
