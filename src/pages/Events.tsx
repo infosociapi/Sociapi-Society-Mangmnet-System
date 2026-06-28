@@ -1,4 +1,5 @@
 import { useState, useMemo } from "react";
+import { useNavigate } from "react-router-dom";
 import { Badge, Button, Card, Input, Label, Modal, Textarea } from "../components/ui";
 import { useApp } from "../context/AppContext";
 import type { Event } from "../types";
@@ -24,8 +25,10 @@ const empty = (): Partial<Event> => ({
 
 export default function Events() {
   const { events, addEvent, updateEvent, deleteEvent, duplicateEvent, archiveEvent, hasPermission } = useApp();
+  const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Event | null>(null);
+
   const [feedbackEvent, setFeedbackEvent] = useState<Event | null>(null);
   const [form, setForm] = useState<Partial<Event>>(empty());
   const canManage = hasPermission("manage_events");
@@ -46,10 +49,7 @@ export default function Events() {
     const income = events.reduce((s, e) => s + (e.income || 0), 0);
     return { budget, expense, income, pl: income - expense };
   }, [events]);
-
-  const openCreate = () => { setEditing(null); setForm(empty()); setOpen(true); };
-  const openEdit = (e: Event) => { setEditing(e); setForm({ ...e, date: new Date(e.date).toISOString().slice(0, 10) }); setOpen(true); };
-
+  
   const save = () => {
     if (!form.title) return;
     const eventDate = new Date(form.date as string);
@@ -308,7 +308,7 @@ function EventCard({
                 {e.status === "Upcoming" && (
                   <>
                     <Button size="sm" onClick={onRegister}>+ Register</Button>
-                    <Button size="sm" variant="outline" onClick={() => window.location.href = `/app/attendance?eventId=${e.id}`}>Start Attendance</Button>
+                    <Button size="sm" variant="outline" onClick={() => navigate(`/app/attendance?eventId=${e.id}`)}>Start Attendance</Button>
                   </>
                 )}
         {e.status === "Completed" && <Button size="sm" variant="outline" onClick={onViewFeedback}>Feedback</Button>}

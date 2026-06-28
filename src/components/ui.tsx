@@ -140,7 +140,7 @@ export function Badge({ tone = "slate", className, children, ...rest }: BadgePro
   );
 }
 
-export function Avatar({ name, gradient, size = 40 }: { name: string; gradient?: string; size?: number }) {
+export function Avatar({ name, gradient, size = 40, src }: { name: string; gradient?: string; size?: number; src?: string }) {
   const initials = name
     .replace(/\(.+?\)/g, "")
     .trim()
@@ -148,6 +148,19 @@ export function Avatar({ name, gradient, size = 40 }: { name: string; gradient?:
     .slice(0, 2)
     .map((w) => w[0]?.toUpperCase())
     .join("");
+  
+  if (src) {
+    return (
+      <img
+        src={src}
+        alt={name}
+        onError={(e) => { e.currentTarget.style.display = 'none'; }}
+        style={{ width: size, height: size }}
+        className="rounded-full object-cover shrink-0"
+      />
+    );
+  }
+  
   return (
     <div
       style={{ width: size, height: size, fontSize: size * 0.38 }}
