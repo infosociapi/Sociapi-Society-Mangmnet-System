@@ -14,32 +14,54 @@ export default function Settings() {
   const [newPw, setNewPw] = useState("");
   const [confirmPw, setConfirmPw] = useState("");
   const [msg, setMsg] = useState<{ type: "ok" | "err"; text: string } | null>(null);
+
+  // Profile fields are edited locally and only committed when "Save Changes" is clicked.
   const [profile, setProfile] = useState({
     name: currentUser?.name || "",
     email: currentUser?.email || "",
     phone: currentUser?.phone || "",
     department: currentUser?.department || "",
   });
-  const [saving, setSaving] = useState(false);
+  const [photoFile, setPhotoFile] = useState<File | null>(null);
+  const [photoPreview, setPhotoPreview] = useState<string | null>(null);
+  const [savingProfile, setSavingProfile] = useState(false);
+  const [profileMsg, setProfileMsg] = useState<{ type: "ok" | "err"; text: string } | null>(null);
 
   if (!currentUser) return null;
 
-  const saveProfile = async () => {
-    setSaving(true);
-    await updateUser(currentUser.id, profile);
-    setSaving(false);
-    alert("Profile saved");
-  };
+  const updProfile = (k: keyof typeof profile, v: string) => setProfile((p) => ({ ...p, [k]: v }));
 
-  const uploadPhoto = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const pickPhoto = () => fileInputRef.current?.click();
+
+  const onPhotoSelected = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    setPhotoFile(file);
+    setPhotoPreview(URL.createObjectURL(file));
+  };
+
+  const saveProfile = async () => {
+    setProfileMsg(null);
+    setSavingProfile(true);
     try {
-      const url = await uploadToSupabaseStorage(`avatars/${currentUser.id}`, file);
-      await updateUser(currentUser.id, { photoUrl: url });
-      alert("Photo updated");
-    } catch (e) {
-      alert("Upload failed");
+      let photoUrl: string | undefined;
+      if (photoFile) {
+        photoUrl = await uploadToSupabaseStorage(`avatars-${currentUser.id}-${Date.now()}-${photoFile.name}`, photoFile);
+      }
+      updateUser(currentUser.id, {
+        name: profile.name,
+        email: profile.email,
+        phone: profile.phone,
+        department: profile.department,
+        // NOTE: if your User type (types.ts) doesn't have `photoUrl?: string` yet, add it there.
+        ...(photoUrl ? { photoUrl } : {}),
+      } as any);
+      setPhotoFile(null);
+      setProfileMsg({ type: "ok", text: "Profile updated successfully." });
+    } catch (error) {
+      setProfileMsg({ type: "err", text: error instanceof Error ? error.message : "Could not save profile." });
+    } finally {
+      setSavingProfile(false);
     }
   };
 
@@ -57,6 +79,9 @@ export default function Settings() {
 
   const onLogout = () => { logout(); nav("/login"); };
 
+  // Prefer the freshly picked photo (preview), then fall back to whatever is already saved.
+  const currentPhoto = photoPreview || (currentUser as any).photoUrl;
+
   return (
     <div className="space-y-6">
       <div>
@@ -69,9 +94,24 @@ export default function Settings() {
           <div className="text-center">
             <div className="flex justify-center">
               <div className="relative">
-                <Avatar name={currentUser.name} gradient={currentUser.avatar} size={96} src={currentUser.photoUrl} />
-                <Button size="sm" variant="outline" className="absolute -bottom-2 -right-2 rounded-full h-8 w-8" icon={<Camera className="h-4 w-4" />} onClick={() => fileInputRef.current?.click()} />
-                <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={uploadPhoto} />
+                {currentPhoto ? (
+                  <img
+                    src={currentPhoto}
+                    alt={currentUser.name}
+                    className="h-24 w-24 rounded-full object-cover ring-2 ring-slate-200 dark:ring-white/10"
+                  />
+                ) : (
+                  <Avatar name={currentUser.name} gradient={currentUser.avatar} size={96} />
+                )}
+                <button
+                  type="button"
+                  onClick={pickPhoto}
+                  title="Change profile picture"
+                  className="absolute -bottom-1 -right-1 h-8 w-8 rounded-full bg-indigo-600 text-white flex items-center justify-center shadow-md hover:bg-indigo-700"
+                >
+                  <Camera className="h-4 w-4" />
+                </button>
+                <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={onPhotoSelected} />
               </div>
             </div>
             <h2 className="mt-4 font-bold text-lg">{currentUser.name}</h2>
@@ -81,6 +121,9 @@ export default function Settings() {
               <Badge tone="violet">{currentUser.specialNumber}</Badge>
             </div>
             <Badge tone="emerald" className="mt-2"><Shield className="h-3 w-3" /> {currentUser.role}</Badge>
+            {photoFile && (
+              <p className="text-xs text-indigo-600 mt-2">New photo selected — click "Save Changes" below to upload it.</p>
+            )}
           </div>
           <div className="mt-6 grid grid-cols-3 gap-2 text-center">
             <div className="rounded-xl bg-slate-100/60 dark:bg-white/5 p-2"><p className="font-bold">{currentUser.points}</p><p className="text-[10px] uppercase tracking-wider text-slate-500">Points</p></div>
@@ -93,12 +136,19 @@ export default function Settings() {
           <div>
             <p className="font-semibold flex items-center gap-2 mb-3"><UserIcon className="h-4 w-4" /> Profile Info</p>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              <div><Label>Name</Label><Input value={profile.name} onChange={(e) => setProfile({...profile, name: e.target.value})} /></div>
-              <div><Label>Email</Label><Input value={profile.email} onChange={(e) => setProfile({...profile, email: e.target.value})} /></div>
-              <div><Label>Phone</Label><Input value={profile.phone} onChange={(e) => setProfile({...profile, phone: e.target.value})} /></div>
-              <div><Label>Department</Label><Input value={profile.department} onChange={(e) => setProfile({...profile, department: e.target.value})} /></div>
+              <div><Label>Name</Label><Input value={profile.name} onChange={(e) => updProfile("name", e.target.value)} /></div>
+              <div><Label>Email</Label><Input value={profile.email} onChange={(e) => updProfile("email", e.target.value)} /></div>
+              <div><Label>Phone</Label><Input value={profile.phone} onChange={(e) => updProfile("phone", e.target.value)} /></div>
+              <div><Label>Department</Label><Input value={profile.department} onChange={(e) => updProfile("department", e.target.value)} /></div>
             </div>
-            <div className="mt-4"><Button icon={<Save className="h-4 w-4" />} onClick={saveProfile} disabled={saving}>{saving ? "Saving..." : "Save Changes"}</Button></div>
+            {profileMsg && (
+              <p className={`mt-3 text-xs px-3 py-2 rounded-lg ${profileMsg.type === "ok" ? "bg-emerald-500/10 text-emerald-600" : "bg-rose-500/10 text-rose-600"}`}>{profileMsg.text}</p>
+            )}
+            <div className="mt-3">
+              <Button icon={<Save className="h-4 w-4" />} disabled={savingProfile} onClick={saveProfile}>
+                {savingProfile ? "Saving…" : "Save Changes"}
+              </Button>
+            </div>
           </div>
 
           <hr className="border-slate-200 dark:border-white/10" />
@@ -133,4 +183,3 @@ export default function Settings() {
     </div>
   );
 }
-
