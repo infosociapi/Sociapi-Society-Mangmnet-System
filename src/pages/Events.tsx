@@ -1,5 +1,5 @@
 import { useState, useMemo } from "react";
-import { Badge, Button, Card, Input, Label, Modal, Textarea } from "../components/ui";
+import { Badge, Button, Card, Input, Label, Modal, Select, Textarea } from "../components/ui";
 import { useApp } from "../context/AppContext";
 import type { Event } from "../types";
 import { Archive, Award, Calendar, Copy, DollarSign, MapPin, Pencil, Plus, Star, Trash2, TrendingDown, TrendingUp, Users2 } from "lucide-react";
@@ -63,6 +63,7 @@ export default function Events() {
     const payload = {
       title: form.title!,
       description: form.description || "",
+      type: (form.type as Event["type"]) || "event",
       date: eventDate.toISOString(),
       location: form.location || "",
       capacity: Number(form.capacity || 0),
@@ -99,16 +100,31 @@ export default function Events() {
         <Card className="p-4"><p className="text-xs uppercase text-slate-500">Net P/L</p><p className={`text-xl font-bold mt-1 ${totals.pl >= 0 ? "text-emerald-600" : "text-rose-600"}`}>PKR {totals.pl.toLocaleString()}</p></Card>
       </div>
 
-      <Section title="Upcoming" tone="indigo">
-        {upcoming.length === 0 && <p className="text-sm text-slate-500">No upcoming events.</p>}
+      <Section title="Upcoming Events" tone="indigo">
+        {upcoming.filter(e => e.type === "event").length === 0 && <p className="text-sm text-slate-500">No upcoming events.</p>}
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-          {upcoming.map((e) => (
+          {upcoming.filter(e => e.type === "event").map((e) => (
             <EventCard key={e.id} event={e} canManage={canManage}
               onEdit={() => openEdit(e)}
               onDelete={() => { if (confirm("Delete event?")) deleteEvent(e.id); }}
               onDuplicate={() => duplicateEvent(e.id)}
               onArchive={() => archiveEvent(e.id)}
               onRegister={() => updateEvent(e.id, { registered: Math.min(e.capacity, e.registered + 1) })}
+              onViewFeedback={() => setFeedbackEvent(e)}
+            />
+          ))}
+        </div>
+      </Section>
+      <Section title="Upcoming Meetings" tone="teal">
+        {upcoming.filter(e => e.type === "meeting").length === 0 && <p className="text-sm text-slate-500">No upcoming meetings.</p>}
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+          {upcoming.filter(e => e.type === "meeting").map((e) => (
+            <EventCard key={e.id} event={e} canManage={canManage}
+              onEdit={() => openEdit(e)}
+              onDelete={() => { if (confirm("Delete event?")) deleteEvent(e.id); }}
+              onDuplicate={() => duplicateEvent(e.id)}
+              onArchive={() => archiveEvent(e.id)}
+              onRegister={() => {}}
               onViewFeedback={() => setFeedbackEvent(e)}
             />
           ))}
@@ -152,7 +168,16 @@ export default function Events() {
           <div><Label>Title</Label><Input value={form.title || ""} onChange={(e) => setForm({ ...form, title: e.target.value })} /></div>
           <div><Label>Description</Label><Textarea value={form.description || ""} onChange={(e) => setForm({ ...form, description: e.target.value })} /></div>
           <div className="grid grid-cols-2 gap-3">
-            <div><Label>Date</Label><Input type="date" value={form.date as string} onChange={(e) => setForm({ ...form, date: e.target.value })} /></div>
+            <div>
+              <Label>Type</Label>
+              <Select value={form.type || "event"} onChange={(e) => setForm({ ...form, type: e.target.value as "event" | "meeting" })}>
+                <option value="event">Event</option>
+                <option value="meeting">Meeting</option>
+              </Select>
+            </div>
+            <div><Label>Date & Time</Label><Input type="datetime-local" value={form.date ? form.date.slice(0, 16) : ""} onChange={(e) => setForm({ ...form, date: e.target.value })} /></div>
+          </div>
+          <div className="grid grid-cols-1 gap-3">
             <div><Label>Capacity</Label><Input type="number" value={form.capacity || 0} onChange={(e) => setForm({ ...form, capacity: +e.target.value })} /></div>
           </div>
           <div><Label>Venue / Location</Label><Input value={form.location || ""} onChange={(e) => setForm({ ...form, location: e.target.value })} /></div>

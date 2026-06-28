@@ -11,7 +11,6 @@ export default function Attendance() {
   const [searchParams] = useSearchParams();
   const [qrOpen, setQrOpen] = useState(false);
   const [eventId, setEventId] = useState<string>(searchParams.get("eventId") || "");
-  const [attendanceDate, setAttendanceDate] = useState(new Date().toISOString().slice(0, 10));
   const [scanned, setScanned] = useState<{ name: string; duplicate: boolean } | null>(null);
   const [scanInput, setScanInput] = useState("");
   const [memberQr, setMemberQr] = useState<{ user: any; img: string } | null>(null);

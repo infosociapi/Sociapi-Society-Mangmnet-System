@@ -60,6 +60,7 @@ export interface Event {
   id: string;
   title: string;
   description: string;
+  type?: "event" | "meeting";
   date: string;
   location: string;
   capacity: number;
