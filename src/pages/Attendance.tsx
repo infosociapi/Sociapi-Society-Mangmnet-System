@@ -1,3 +1,4 @@
+
 import { useEffect, useMemo, useState } from "react";
 import QRCode from "qrcode";
 import { useSearchParams } from "react-router-dom";
