@@ -227,9 +227,13 @@ export default function IDCard() {
               {/* Body */}
               <div className="mt-4 flex items-center gap-4">
                 <div className="rounded-2xl bg-white/15 ring-1 ring-white/30 p-1 backdrop-blur">
-                  <div style={{ width: 72, height: 72, borderRadius: 999, background: "linear-gradient(135deg,#111827,#14B8A6)", color: "white", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 26 }}>
-                    {initials}
-                  </div>
+                  {currentUser.photoUrl ? (
+                    <img src={currentUser.photoUrl} alt={currentUser.name} style={{ width: 72, height: 72, borderRadius: 999, objectFit: "cover" }} />
+                  ) : (
+                    <div style={{ width: 72, height: 72, borderRadius: 999, background: "linear-gradient(135deg,#111827,#14B8A6)", color: "white", display: "flex", alignItems: "center", justifyContent: "center", fontWeight: 800, fontSize: 26 }}>
+                      {initials}
+                    </div>
+                  )}
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="text-[10px] uppercase tracking-widest opacity-80">Name</p>
