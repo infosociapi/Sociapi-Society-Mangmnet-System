@@ -1,5 +1,4 @@
- 
- import { BrowserRouter, HashRouter, Navigate, Route, Routes } from "react-router-dom";
+import { BrowserRouter, HashRouter, Navigate, Route, Routes } from "react-router-dom";
 import { AppProvider, useApp } from "./context/AppContext";
 import AuthLayout from "./layouts/AuthLayout";
 import DashboardLayout from "./layouts/DashboardLayout";
@@ -10,9 +9,9 @@ import Reset from "./pages/auth/Reset";
 import Dashboard from "./pages/Dashboard";
 import Members from "./pages/Members";
 import Tasks from "./pages/Tasks";
-import Attendance from "@/pages/Attendance";
-import AttendanceReport from "@/pages/AttendanceReport";
-import Events from "@/pages/Events";
+import Attendance from "./pages/Attendance";
+import AttendanceReport from "./pages/AttendanceReport.tsx";
+import Events from "./pages/Events";
 import Finance from "./pages/Finance";
 import HR from "./pages/HR";
 import Outreach from "./pages/Outreach";
