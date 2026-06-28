@@ -101,7 +101,7 @@ create table if not exists public.attendance (
   attendance_date date not null default current_date,
   created_at timestamptz not null default now(),
   constraint attendance_method_check check (method in ('Manual', 'QR', 'Event')),
-  constraint attendance_status_check check (status in ('Present', 'Absent', 'Late')),
+  constraint attendance_status_check check (status in ('Present', 'Absent', 'Late', 'Excused')),
   constraint attendance_unique_scan unique (member_id, event_id, attendance_date)
 );
 
