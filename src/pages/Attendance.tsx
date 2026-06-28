@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import QRCode from "qrcode";
+import { useSearchParams } from "react-router-dom";
 import { Avatar, Badge, Button, Card, Input, Modal, Select } from "../components/ui";
 import { useApp } from "../context/AppContext";
 import { CheckCheck, Clock, QrCode, ScanLine, XCircle, Calendar } from "lucide-react";
@@ -7,8 +8,9 @@ import { Bar, BarChart, CartesianGrid, Cell, Pie, PieChart, ResponsiveContainer,
 
 export default function Attendance() {
   const { users, attendance, markAttendance, events } = useApp();
+  const [searchParams] = useSearchParams();
   const [qrOpen, setQrOpen] = useState(false);
-  const [eventId, setEventId] = useState<string>("");
+  const [eventId, setEventId] = useState<string>(searchParams.get("eventId") || "");
   const [scanned, setScanned] = useState<{ name: string; duplicate: boolean } | null>(null);
   const [scanInput, setScanInput] = useState("");
   const [memberQr, setMemberQr] = useState<{ user: any; img: string } | null>(null);

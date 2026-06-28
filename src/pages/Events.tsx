@@ -108,7 +108,6 @@ export default function Events() {
               onDuplicate={() => duplicateEvent(e.id)}
               onArchive={() => archiveEvent(e.id)}
               onRegister={() => updateEvent(e.id, { registered: Math.min(e.capacity, e.registered + 1) })}
-              onAttend={() => updateEvent(e.id, { attended: e.attended + 1 })}
               onViewFeedback={() => setFeedbackEvent(e)}
             />
           ))}
@@ -124,7 +123,6 @@ export default function Events() {
               onDuplicate={() => duplicateEvent(e.id)}
               onArchive={() => archiveEvent(e.id)}
               onRegister={() => {}}
-              onAttend={() => {}}
               onViewFeedback={() => setFeedbackEvent(e)}
             />
           ))}
@@ -141,7 +139,6 @@ export default function Events() {
                 onDuplicate={() => duplicateEvent(e.id)}
                 onArchive={() => {}}
                 onRegister={() => {}}
-                onAttend={() => {}}
                 onViewFeedback={() => setFeedbackEvent(e)}
               />
             ))}
@@ -158,10 +155,32 @@ export default function Events() {
             <div><Label>Capacity</Label><Input type="number" value={form.capacity || 0} onChange={(e) => setForm({ ...form, capacity: +e.target.value })} /></div>
           </div>
           <div><Label>Venue / Location</Label><Input value={form.location || ""} onChange={(e) => setForm({ ...form, location: e.target.value })} /></div>
-          <div className="grid grid-cols-3 gap-3">
-            <div><Label>Budget (PKR)</Label><Input type="number" value={form.budget || 0} onChange={(e) => setForm({ ...form, budget: +e.target.value })} /></div>
-            <div><Label>Expense (PKR)</Label><Input type="number" value={form.expense || 0} onChange={(e) => setForm({ ...form, expense: +e.target.value })} /></div>
-            <div><Label>Income (PKR)</Label><Input type="number" value={form.income || 0} onChange={(e) => setForm({ ...form, income: +e.target.value })} /></div>
+          <div className="rounded-xl bg-slate-100/60 dark:bg-white/5 p-3 space-y-3">
+            <p className="text-xs font-semibold uppercase tracking-wider text-slate-500">Event Finance</p>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <div>
+                <Label>Planned Budget (PKR)</Label>
+                <Input type="number" value={form.budget || 0} onChange={(e) => setForm({ ...form, budget: +e.target.value })} placeholder="e.g. 40000" />
+              </div>
+              <div>
+                <Label>Income / Sponsorship Received (PKR)</Label>
+                <Input type="number" value={form.income || 0} onChange={(e) => setForm({ ...form, income: +e.target.value })} placeholder="e.g. 35000" />
+              </div>
+              <div>
+                <Label>Total Expense / Kharch (PKR)</Label>
+                <Input type="number" value={form.expense || 0} onChange={(e) => setForm({ ...form, expense: +e.target.value })} placeholder="e.g. 38000" />
+              </div>
+            </div>
+            {(() => {
+              const inc = Number(form.income || 0);
+              const exp = Number(form.expense || 0);
+              const pl = inc - exp;
+              return (
+                <div className={`text-sm font-semibold px-3 py-2 rounded-lg ${pl >= 0 ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300" : "bg-rose-500/10 text-rose-700 dark:text-rose-300"}`}>
+                  Received: PKR {inc.toLocaleString()} · Spent: PKR {exp.toLocaleString()} · {pl >= 0 ? "Profit" : "Loss"}: PKR {Math.abs(pl).toLocaleString()}
+                </div>
+              );
+            })()}
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div>
@@ -237,11 +256,11 @@ function Section({ title, tone, children }: { title: string; tone: any; children
 
 function EventCard({
   event: e, canManage,
-  onEdit, onDelete, onDuplicate, onArchive, onRegister, onAttend, onViewFeedback,
+  onEdit, onDelete, onDuplicate, onArchive, onRegister, onViewFeedback,
 }: {
   event: Event; canManage: boolean;
   onEdit: () => void; onDelete: () => void; onDuplicate: () => void; onArchive: () => void;
-  onRegister: () => void; onAttend: () => void; onViewFeedback: () => void;
+  onRegister: () => void; onViewFeedback: () => void;
 }) {
   const pl = (e.income || 0) - (e.expense || 0);
   const avg = e.feedback.length ? (e.feedback.reduce((s, f) => s + f.rating, 0) / e.feedback.length).toFixed(1) : "—";
@@ -285,13 +304,13 @@ function EventCard({
           <span className="flex items-center gap-1"><Award className="h-3 w-3 text-amber-500" /> {e.attended} certs</span>
         </div>
       )}
-      <div className="mt-4 flex flex-wrap gap-1.5">
-        {e.status === "Upcoming" && (
-          <>
-            <Button size="sm" onClick={onRegister}>+ Register</Button>
-            <Button size="sm" variant="outline" onClick={onAttend}>+ Attended</Button>
-          </>
-        )}
+              <div className="mt-4 flex flex-wrap gap-1.5">
+                {e.status === "Upcoming" && (
+                  <>
+                    <Button size="sm" onClick={onRegister}>+ Register</Button>
+                    <Button size="sm" variant="outline" onClick={() => window.location.href = `/app/attendance?eventId=${e.id}`}>Start Attendance</Button>
+                  </>
+                )}
         {e.status === "Completed" && <Button size="sm" variant="outline" onClick={onViewFeedback}>Feedback</Button>}
         {canManage && (
           <>
