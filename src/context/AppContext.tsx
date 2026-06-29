@@ -724,16 +724,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
   // attendance with dedup per day & event scope
   const markAttendance: AppState["markAttendance"] = (userId, method, status, eventId, date) => {
     let duplicate = false;
-    const targetDate = date ? new Date(date).toDateString() : new Date().toDateString();
+    const dateStr = new Date(date || Date.now()).toDateString();
     setState((s) => {
       const exists = s.attendance.find(
-        (a) => a.userId === userId && new Date(a.date).toDateString() === targetDate && (eventId ? a.eventId === eventId : !a.eventId)
+        (a) => a.userId === userId && new Date(a.date).toDateString() === dateStr && (eventId ? a.eventId === eventId : !a.eventId)
       );
       if (exists) {
         duplicate = true;
         return s;
       }
-      const rec: AttendanceRecord = { id: "att-" + Date.now() + Math.random(), userId, date: new Date().toISOString(), method, status, eventId };
+      const rec: AttendanceRecord = { id: "att-" + Date.now() + Math.random(), userId, date: date || new Date().toISOString(), method, status, eventId };
       const points = status === "Present" ? 5 : status === "Late" ? 2 : 0;
       // recompute attendance % per user across all recs
       const allRecs = [rec, ...s.attendance];

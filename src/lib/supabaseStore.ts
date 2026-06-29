@@ -174,6 +174,19 @@ export async function deleteEventRow(id: string) {
   const { error } = await supabase.from("events").delete().eq("id", id);
   if (error) throw error;
 }
+
+export async function insertDepartment(name: string, description: string) {
+  if (!isSupabaseConfigured) return;
+  const { error } = await supabase.from("departments").insert({ name, description });
+  if (error) throw error;
+}
+
+export async function deleteDepartmentRow(id: string) {
+  if (!isSupabaseConfigured || !isUuid(id)) return;
+  const { error } = await supabase.from("departments").delete().eq("id", id);
+  if (error) throw error;
+}
+
 export async function loadEvents(): Promise<Event[]> {
   if (!isSupabaseConfigured) return [];
   const { data, error } = await supabase.from("events").select("*").order("event_date", { ascending: true });
@@ -273,18 +286,6 @@ export async function deleteMemberRow(id: string) {
 export async function deleteChatMessage(id: string) {
   if (!isSupabaseConfigured) return;
   const { error } = await supabase.from("chat").delete().eq("id", id);
-  if (error) throw error;
-}
-
-export async function insertAttendance(rec: AttendanceRecord) {
-  if (!isSupabaseConfigured) return;
-  const { error } = await supabase.from("attendance").insert({
-    member_id: rec.userId,
-    event_id: rec.eventId || null,
-    method: rec.method,
-    status: rec.status,
-    created_at: rec.date,
-  });
   if (error) throw error;
 }
 
