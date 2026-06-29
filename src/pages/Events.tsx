@@ -1,531 +1,181 @@
-import type {
-  ActivityLog,
-  Application,
-  AttendanceRecord,
-  ChatMessage,
-  Department,
-  Event,
-  FinanceEntry,
-  MessageTemplate,
-  NotificationItem,
-  OutreachContact,
-  Task,
-  User,
-} from "../types";
-import { isSupabaseConfigured, supabase, SUPABASE_STORAGE_BUCKET } from "./supabase";
+import { useMemo, useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { Badge, Button, Card, Input, Label, Modal, Select, Textarea } from "../components/ui";
+import { useApp } from "../context/AppContext";
+import type { Event } from "../types";
+import { Archive, CalendarDays, Copy, MapPin, Pencil, Plus, Trash2, Users2 } from "lucide-react";
 
-export interface ErpStateSnapshot {
-  users: User[];
-  tasks: Task[];
-  events: Event[];
-  finance: FinanceEntry[];
-  outreach: OutreachContact[];
-  applications: Application[];
-  templates: MessageTemplate[];
-  notifications: NotificationItem[];
-  attendance: AttendanceRecord[];
-  activityLogs: ActivityLog[];
-  departments: Department[];
-  chats: ChatMessage[];
-}
+const empty = (): Partial<Event> => ({
+  title: "",
+  description: "",
+  type: "event",
+  date: new Date().toISOString().slice(0, 16),
+  location: "",
+  capacity: 100,
+  registered: 0,
+  attended: 0,
+  status: "Upcoming",
+  feedback: [],
+  budget: 0,
+  expense: 0,
+  income: 0,
+});
 
-function isUuid(id?: string) {
-  return !!id && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id);
-}
+export default function Events() {
+  const { events, addEvent, updateEvent, deleteEvent, duplicateEvent, archiveEvent, hasPermission } = useApp();
+  const navigate = useNavigate();
+  const canManage = hasPermission("manage_events");
+  const [open, setOpen] = useState(false);
+  const [editing, setEditing] = useState<Event | null>(null);
+  const [form, setForm] = useState<Partial<Event>>(empty());
 
-export async function loadErpState(): Promise<ErpStateSnapshot | null> {
-  if (!isSupabaseConfigured) return null;
-  const [members, departments, events, finance, outreach, applications, notifications, attendance, audit, chat, tasks, assignees, submissions] = await Promise.all([
-    supabase.from("members").select("*"),
-    supabase.from("departments").select("*"),
-    supabase.from("events").select("*"),
-    supabase.from("finance_entries").select("*"),
-    supabase.from("outreach").select("*"),
-    supabase.from("hr_applications").select("*"),
-    supabase.from("notifications").select("*"),
-    supabase.from("attendance").select("*"),
-    supabase.from("audit_logs").select("*"),
-    supabase.from("chat").select("*"),
-    supabase.from("tasks").select("*"),
-    supabase.from("task_assignees").select("*"),
-    supabase.from("task_submissions").select("*")
-  ]);
-  const errors = [members, departments, events, finance, outreach, applications, notifications, attendance, audit, chat, tasks, assignees, submissions].map((r) => r.error).filter(Boolean);
-  if (errors[0]) throw errors[0];
+  const startOfToday = new Date();
+  startOfToday.setHours(0, 0, 0, 0);
+  const isPastDate = (e: Event) => new Date(e.date) < startOfToday;
+  const upcomingEvents = events.filter((e) => (e.type || "event") === "event" && e.status !== "Archived" && !isPastDate(e) && e.status !== "Completed");
+  const upcomingMeetings = events.filter((e) => (e.type || "event") === "meeting" && e.status !== "Archived" && !isPastDate(e) && e.status !== "Completed");
+  const pastItems = events.filter((e) => e.status !== "Archived" && (e.status === "Completed" || isPastDate(e)));
+  const archived = events.filter((e) => e.status === "Archived");
 
-  const users: User[] = (members.data || []).map((m: any) => ({
-    id: m.id,
-    username: m.username,
-    memberId: m.member_id,
-    specialNumber: m.special_number,
-    name: m.name,
-    email: m.email,
-    photoUrl: m.profile_photo_url || undefined,
-    phone: m.phone || "",
-    role: m.role,
-    position: m.position,
-    department: (departments.data || []).find((d: any) => d.id === m.department_id)?.name || "General",
-    skills: [],
-    joinDate: m.join_date,
-    avatar: "teal",
-    points: m.points,
-    attendance: Number(m.attendance),
-    performanceScore: Number(m.performance_score),
-    status: m.status,
-    certificates: [],
-    activity: [],
-    createdBy: m.created_by || undefined,
-    createdAt: m.created_at,
-    lastLogin: m.last_login || undefined,
-  }));
-  const tasksMapped: Task[] = (tasks.data || []).map((t: any) => {
-    const sub = (submissions.data || []).find((s: any) => s.task_id === t.id);
-    return {
-      id: t.id,
-      title: t.title,
-      description: t.description,
-      assignees: (assignees.data || []).filter((a: any) => a.task_id === t.id).map((a: any) => a.member_id),
-      createdBy: t.created_by || "",
-      createdAt: t.created_at,
-      deadline: t.deadline,
-      priority: t.priority,
-      status: t.status,
-      remarks: t.remarks || undefined,
-      reviewNotes: t.review_notes || undefined,
-      approvedBy: t.approved_by || undefined,
-      submission: sub ? { fileName: sub.file_name, fileData: sub.file_url, fileType: sub.file_type, notes: sub.comments || "", submittedAt: sub.submitted_at } : undefined,
+  const totals = useMemo(() => ({
+    budget: events.reduce((s, e) => s + (e.budget || 0), 0),
+    expense: events.reduce((s, e) => s + (e.expense || 0), 0),
+    income: events.reduce((s, e) => s + (e.income || 0), 0),
+  }), [events]);
+
+  const openCreate = () => { setEditing(null); setForm(empty()); setOpen(true); };
+  const openEdit = (e: Event) => { setEditing(e); setForm({ ...e, date: new Date(e.date).toISOString().slice(0, 16) }); setOpen(true); };
+
+  const save = () => {
+    if (!form.title || !form.date) return;
+    const dt = new Date(form.date as string);
+    const nowDay = new Date();
+    nowDay.setHours(0, 0, 0, 0);
+    const eventDay = new Date(dt);
+    eventDay.setHours(0, 0, 0, 0);
+    const status: Event["status"] = (form.status as Event["status"]) || (eventDay < nowDay ? "Completed" : "Upcoming");
+    const payload: Omit<Event, "id"> = {
+      title: form.title,
+      description: form.description || "",
+      type: (form.type as Event["type"]) || "event",
+      date: dt.toISOString(),
+      location: form.location || "TBA",
+      capacity: Number(form.capacity || 0),
+      registered: Number(form.registered || 0),
+      attended: Number(form.attended || 0),
+      status,
+      feedback: form.feedback || [],
+      budget: Number(form.budget || 0),
+      expense: Number(form.expense || 0),
+      income: Number(form.income || 0),
+      photos: form.photos || [],
+      documents: form.documents || [],
     };
-  });
-  return {
-    users,
-    departments: (departments.data || []).map((d: any) => ({ id: d.id, name: d.name, description: d.description, leadId: d.lead_id || undefined, createdAt: d.created_at })),
-    events: (events.data || []).map((e: any) => ({ id: e.id, title: e.title, description: e.description, type: e.type || "event", date: e.event_date, location: e.venue, capacity: e.capacity, registered: e.registered, attended: e.attended, status: e.status, feedback: [], budget: Number(e.budget), expense: Number(e.expense), income: Number(e.income) })),
-    finance: (finance.data || []).map((f: any) => ({ id: f.id, type: f.type, amount: Number(f.amount), description: f.description, category: f.category, eventId: f.event_id || undefined, date: f.entry_date })),
-    outreach: (outreach.data || []).map((o: any) => ({ id: o.id, name: o.contact_name, organization: o.organization, type: o.type, email: o.email || "", phone: o.phone || "", stage: o.stage, notes: o.notes, lastContact: o.last_contact || o.created_at })),
-    applications: (applications.data || []).map((a: any) => ({ id: a.id, name: a.name, email: a.email, phone: a.phone || "", position: a.position, stage: a.stage, appliedAt: a.applied_at, notes: a.notes, score: a.score || undefined })),
-    notifications: (notifications.data || []).map((n: any) => ({ id: n.id, userId: n.member_id || undefined, title: n.title, body: n.body, channel: n.channel, type: n.type, read: n.read, createdAt: n.created_at })),
-    attendance: (attendance.data || []).map((a: any) => ({ id: a.id, userId: a.member_id, eventId: a.event_id || undefined, method: a.method, status: a.status, date: a.created_at })),
-    activityLogs: (audit.data || []).map((l: any) => ({ id: l.id, actorId: l.actor_id || "", actorName: l.actor_name, action: l.action, target: l.target || undefined, category: l.category, createdAt: l.created_at })),
-    chats: (chat.data || []).map((c: any) => ({ id: c.id, fromId: c.from_member_id, toId: c.to_member_id || undefined, team: c.team || undefined, body: c.body, read: c.read, createdAt: c.created_at })),
-    tasks: tasksMapped,
-    templates: [],
+    if (editing) updateEvent(editing.id, payload);
+    else addEvent(payload);
+    setOpen(false);
   };
+
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-bold tracking-tight">Events & Meetings</h1>
+          <p className="text-sm text-slate-500">Create events, create meetings, and start attendance sessions.</p>
+        </div>
+        {canManage && <Button icon={<Plus className="h-4 w-4" />} onClick={openCreate}>Create Event / Meeting</Button>}
+      </div>
+
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <StatCard label="Total Budget" value={`PKR ${totals.budget.toLocaleString()}`} />
+        <StatCard label="Total Expense" value={`PKR ${totals.expense.toLocaleString()}`} />
+        <StatCard label="Total Income" value={`PKR ${totals.income.toLocaleString()}`} />
+        <StatCard label="Net P/L" value={`PKR ${(totals.income - totals.expense).toLocaleString()}`} />
+      </div>
+
+      <Section title="Upcoming Events" items={upcomingEvents} canManage={canManage} onEdit={openEdit} onDelete={deleteEvent} onDuplicate={duplicateEvent} onArchive={archiveEvent} onStartAttendance={(id: string) => navigate(`/app/attendance?eventId=${id}`)} />
+      <Section title="Upcoming Meetings" items={upcomingMeetings} canManage={canManage} onEdit={openEdit} onDelete={deleteEvent} onDuplicate={duplicateEvent} onArchive={archiveEvent} onStartAttendance={(id: string) => navigate(`/app/attendance?eventId=${id}`)} />
+      <Section title="Past Events / Meetings" items={pastItems} canManage={canManage} onEdit={openEdit} onDelete={deleteEvent} onDuplicate={duplicateEvent} onArchive={archiveEvent} onStartAttendance={(id: string) => navigate(`/app/attendance?eventId=${id}`)} />
+      <Section title="Archived" items={archived} canManage={canManage} onEdit={openEdit} onDelete={deleteEvent} onDuplicate={duplicateEvent} onArchive={archiveEvent} onStartAttendance={(id: string) => navigate(`/app/attendance?eventId=${id}`)} />
+
+      <Modal open={open} onClose={() => setOpen(false)} title={editing ? "Edit Event / Meeting" : "Create Event / Meeting"} size="lg">
+        <div className="space-y-4">
+          <div><Label>Title</Label><Input value={form.title || ""} onChange={(e) => setForm({ ...form, title: e.target.value })} /></div>
+          <div><Label>Description</Label><Textarea value={form.description || ""} onChange={(e) => setForm({ ...form, description: e.target.value })} /></div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div>
+              <Label>Type</Label>
+              <Select value={form.type || "event"} onChange={(e) => setForm({ ...form, type: e.target.value as "event" | "meeting" })}>
+                <option value="event">Event</option>
+                <option value="meeting">Meeting</option>
+              </Select>
+            </div>
+            <div>
+              <Label>Date</Label>
+              <Input type="date" value={form.date ? form.date.slice(0, 10) : ""} onChange={(e) => setForm({ ...form, date: `${e.target.value}T${(form.date?.slice(11, 16) || "09:00")}` })} />
+            </div>
+            <div>
+              <Label>Time</Label>
+              <Input type="time" value={form.date ? form.date.slice(11, 16) : "09:00"} onChange={(e) => setForm({ ...form, date: `${(form.date?.slice(0, 10) || new Date().toISOString().slice(0, 10))}T${e.target.value}` })} />
+            </div>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div><Label>Venue</Label><Input value={form.location || ""} onChange={(e) => setForm({ ...form, location: e.target.value })} /></div>
+            <div><Label>Capacity</Label><Input type="number" value={form.capacity || 0} onChange={(e) => setForm({ ...form, capacity: +e.target.value })} /></div>
+          </div>
+          <div className="grid grid-cols-3 gap-4">
+            <div><Label>Budget</Label><Input type="number" value={form.budget || 0} onChange={(e) => setForm({ ...form, budget: +e.target.value })} /></div>
+            <div><Label>Income</Label><Input type="number" value={form.income || 0} onChange={(e) => setForm({ ...form, income: +e.target.value })} /></div>
+            <div><Label>Expense</Label><Input type="number" value={form.expense || 0} onChange={(e) => setForm({ ...form, expense: +e.target.value })} /></div>
+          </div>
+        </div>
+        <div className="flex justify-end gap-2 mt-6">
+          <Button variant="ghost" onClick={() => setOpen(false)}>Cancel</Button>
+          <Button onClick={save}>Save</Button>
+        </div>
+      </Modal>
+    </div>
+  );
 }
 
-// NOTE: events & finance are NOT bulk-saved here anymore (that caused duplicate
-// rows on every state change). They use direct insert/update/delete below.
-export async function saveErpState(data: ErpStateSnapshot): Promise<void> {
-  if (!isSupabaseConfigured) return;
-  // Only members are upserted in bulk, and email is unique so no duplicates can occur.
-  const { data: dbDeps } = await supabase.from("departments").select("id,name");
-  const depId = (name: string) => (dbDeps || []).find((d: any) => d.name === name)?.id || null;
-  const members = data.users
-    .filter((u) => isUuid(u.id))
-    .map((u) => ({
-      id: u.id,
-      username: u.username,
-      member_id: u.memberId,
-      special_number: u.specialNumber,
-      name: u.name,
-      email: u.email,
-      phone: u.phone || null,
-      profile_photo_url: u.photoUrl || null,
-      role: u.role,
-      department_id: depId(u.department),
-      position: u.position,
-      attendance: u.attendance,
-      points: u.points,
-      performance_score: u.performanceScore,
-      status: u.status,
-      last_login: u.lastLogin || null,
-    }));
-  if (members.length) await supabase.from("members").upsert(members, { onConflict: "id" });
+function StatCard({ label, value }: { label: string; value: string }) {
+  return <Card className="p-4"><p className="text-xs uppercase text-slate-500">{label}</p><p className="text-xl font-bold mt-1">{value}</p></Card>;
 }
 
-/* ===================== EVENTS (direct CRUD) ===================== */
-function eventRow(e: Event) {
-  return {
-    title: e.title,
-    description: e.description,
-    type: e.type || "event",
-    event_date: e.date,
-    venue: e.location,
-    capacity: e.capacity,
-    registered: e.registered,
-    attended: e.attended,
-    status: e.status,
-    budget: e.budget,
-    expense: e.expense,
-    income: e.income,
-  };
-}
-export async function insertEvent(e: Event): Promise<string | null> {
-  if (!isSupabaseConfigured) return null;
-  const { data, error } = await supabase.from("events").insert(eventRow(e)).select("id").maybeSingle();
-  if (error) throw error;
-  return data?.id || null;
-}
-export async function updateEventRow(id: string, e: Event) {
-  if (!isSupabaseConfigured || !isUuid(id)) return;
-  const { error } = await supabase.from("events").update(eventRow(e)).eq("id", id);
-  if (error) throw error;
-}
-export async function deleteEventRow(id: string) {
-  if (!isSupabaseConfigured || !isUuid(id)) return;
-  const { error } = await supabase.from("events").delete().eq("id", id);
-  if (error) throw error;
-}
-
-export async function insertDepartment(name: string, description: string, leadId?: string) {
-  if (!isSupabaseConfigured) return;
-  const { error } = await supabase.from("departments").insert({ name, description, lead_id: isUuid(leadId) ? leadId : null });
-  if (error) throw error;
-}
-
-export async function updateDepartmentRow(id: string, patch: Partial<Department>) {
-  if (!isSupabaseConfigured || !isUuid(id)) return;
-  const { error } = await supabase.from("departments").update({
-    name: patch.name,
-    description: patch.description,
-    lead_id: isUuid(patch.leadId) ? patch.leadId : null,
-    updated_at: new Date().toISOString(),
-  }).eq("id", id);
-  if (error) throw error;
-}
-
-export async function deleteDepartmentRow(id: string) {
-  if (!isSupabaseConfigured || !isUuid(id)) return;
-  const { error } = await supabase.from("departments").delete().eq("id", id);
-  if (error) throw error;
-}
-
-export async function loadDepartments(): Promise<Department[]> {
-  if (!isSupabaseConfigured) return [];
-  const { data, error } = await supabase.from("departments").select("*").order("name", { ascending: true });
-  if (error) throw error;
-  return (data || []).map((d: any) => ({ id: d.id, name: d.name, leadId: d.lead_id || undefined, description: d.description, createdAt: d.created_at }));
-}
-
-export async function loadEvents(): Promise<Event[]> {
-  if (!isSupabaseConfigured) return [];
-  const { data, error } = await supabase.from("events").select("*").order("event_date", { ascending: true });
-  if (error) throw error;
-  return (data || []).map((e: any) => ({
-    id: e.id,
-    title: e.title,
-    description: e.description,
-    date: e.event_date,
-    location: e.venue,
-    capacity: e.capacity,
-    registered: e.registered,
-    attended: e.attended,
-    status: e.status,
-    feedback: [],
-    budget: Number(e.budget),
-    expense: Number(e.expense),
-    income: Number(e.income),
-  }));
-}
-
-/* ===================== FINANCE (direct CRUD) ===================== */
-function financeRow(f: FinanceEntry) {
-  return {
-    type: f.type,
-    amount: f.amount,
-    description: f.description,
-    category: f.category,
-    event_id: isUuid(f.eventId) ? f.eventId : null,
-    entry_date: f.date,
-    reference: f.reference || null,
-  };
-}
-export async function insertFinance(f: FinanceEntry): Promise<string | null> {
-  if (!isSupabaseConfigured) return null;
-  const { data, error } = await supabase.from("finance_entries").insert(financeRow(f)).select("id").maybeSingle();
-  if (error) throw error;
-  return data?.id || null;
-}
-export async function updateFinanceRow(id: string, f: FinanceEntry) {
-  if (!isSupabaseConfigured || !isUuid(id)) return;
-  const { error } = await supabase.from("finance_entries").update(financeRow(f)).eq("id", id);
-  if (error) throw error;
-}
-export async function deleteFinanceRow(id: string) {
-  if (!isSupabaseConfigured || !isUuid(id)) return;
-  const { error } = await supabase.from("finance_entries").delete().eq("id", id);
-  if (error) throw error;
-}
-export async function loadFinance(): Promise<FinanceEntry[]> {
-  if (!isSupabaseConfigured) return [];
-  const { data, error } = await supabase.from("finance_entries").select("*").order("entry_date", { ascending: false });
-  if (error) throw error;
-  return (data || []).map((f: any) => ({
-    id: f.id,
-    type: f.type,
-    amount: Number(f.amount),
-    description: f.description,
-    category: f.category,
-    eventId: f.event_id || undefined,
-    date: f.entry_date,
-    reference: f.reference || undefined,
-  }));
-}
-
-/* ===================== ATTENDANCE (direct CRUD) ===================== */
-export async function upsertAttendanceRecord(rec: AttendanceRecord) {
-  if (!isSupabaseConfigured) return;
-  const row = {
-    member_id: rec.userId,
-    event_id: isUuid(rec.eventId) ? rec.eventId : null,
-    method: rec.method,
-    status: rec.status,
-    attendance_date: rec.date.slice(0, 10),
-    created_at: rec.date,
-  };
-  // update existing for same member/date/event; else insert
-  const { data: existing } = await supabase
-    .from("attendance")
-    .select("id")
-    .eq("member_id", rec.userId)
-    .eq("attendance_date", rec.date.slice(0, 10))
-    .eq("event_id", isUuid(rec.eventId) ? rec.eventId : null)
-    .maybeSingle();
-  if (existing?.id) {
-    const { error } = await supabase.from("attendance").update(row).eq("id", existing.id);
-    if (error) throw error;
-  } else {
-    const { error } = await supabase.from("attendance").insert(row);
-    if (error) throw error;
-  }
-}
-
-export async function loadAttendance(): Promise<AttendanceRecord[]> {
-  if (!isSupabaseConfigured) return [];
-  const { data, error } = await supabase.from("attendance").select("*").order("created_at", { ascending: false });
-  if (error) throw error;
-  return (data || []).map((a: any) => ({
-    id: a.id,
-    userId: a.member_id,
-    eventId: a.event_id || undefined,
-    method: a.method,
-    status: a.status,
-    date: a.created_at,
-  }));
-}
-
-function isUuidLoose(id?: string) {
-  return !!id && /^[0-9a-f-]{32,36}$/i.test(id);
-}
-
-export async function insertChatMessage(msg: { fromId: string; toId?: string; team?: string; body: string }) {
-  if (!isSupabaseConfigured) return;
-  const row: any = {
-    from_member_id: isUuidLoose(msg.fromId) ? msg.fromId : null,
-    to_member_id: msg.toId && isUuidLoose(msg.toId) ? msg.toId : null,
-    team: msg.team || null,
-    body: msg.body,
-  };
-  if (!row.from_member_id) {
-    // Resolve sender member row by current session if id is not a uuid.
-    const { data } = await supabase.auth.getUser();
-    const email = data.user?.email;
-    if (email) {
-      const { data: m } = await supabase.from("members").select("id").eq("email", email).maybeSingle();
-      row.from_member_id = m?.id || null;
-    }
-  }
-  const { error } = await supabase.from("chat").insert(row);
-  if (error) throw error;
-}
-
-export async function deleteMemberRow(id: string) {
-  if (!isSupabaseConfigured) return;
-  const { error } = await supabase.from("members").delete().eq("id", id);
-  if (error) throw error;
-}
-
-export async function deleteChatMessage(id: string) {
-  if (!isSupabaseConfigured) return;
-  const { error } = await supabase.from("chat").delete().eq("id", id);
-  if (error) throw error;
-}
-
-export async function clearChatThread(opts: { team?: string; a?: string; b?: string }) {
-  if (!isSupabaseConfigured) return;
-  if (opts.team) {
-    const { error } = await supabase.from("chat").delete().eq("team", opts.team);
-    if (error) throw error;
-    return;
-  }
-  if (opts.a && opts.b) {
-    // delete both directions of a DM thread
-    await supabase.from("chat").delete().eq("from_member_id", opts.a).eq("to_member_id", opts.b);
-    await supabase.from("chat").delete().eq("from_member_id", opts.b).eq("to_member_id", opts.a);
-  }
-}
-
-export async function loadChats(): Promise<ChatMessage[]> {
-  if (!isSupabaseConfigured) return [];
-  const { data, error } = await supabase.from("chat").select("*").order("created_at", { ascending: true });
-  if (error) throw error;
-  return (data || []).map((c: any) => ({
-    id: c.id,
-    fromId: c.from_member_id,
-    toId: c.to_member_id || undefined,
-    team: c.team || undefined,
-    body: c.body,
-    read: c.read,
-    createdAt: c.created_at,
-  }));
-}
-
-export async function loadMembers(): Promise<User[]> {
-  if (!isSupabaseConfigured) return [];
-  const [{ data: members }, { data: departments }] = await Promise.all([
-    supabase.from("members").select("*"),
-    supabase.from("departments").select("id,name"),
-  ]);
-  return (members || []).map((m: any) => ({
-    id: m.id,
-    username: m.username,
-    memberId: m.member_id,
-    specialNumber: m.special_number,
-    name: m.name,
-    email: m.email,
-    photoUrl: m.profile_photo_url || undefined,
-    phone: m.phone || "",
-    role: m.role,
-    position: m.position,
-    department: (departments || []).find((d: any) => d.id === m.department_id)?.name || "General",
-    skills: [],
-    joinDate: m.join_date,
-    avatar: "teal",
-    points: m.points,
-    attendance: Number(m.attendance),
-    performanceScore: Number(m.performance_score),
-    status: m.status,
-    certificates: [],
-    activity: [],
-    createdBy: m.created_by || undefined,
-    createdAt: m.created_at,
-    lastLogin: m.last_login || undefined,
-  }));
-}
-
-function mapMemberRow(m: any, departments: any[]): User {
-  return {
-    id: m.id,
-    username: m.username,
-    memberId: m.member_id,
-    specialNumber: m.special_number,
-    name: m.name,
-    email: m.email,
-    photoUrl: m.profile_photo_url || undefined,
-    phone: m.phone || "",
-    role: m.role,
-    position: m.position,
-    department: (departments || []).find((d: any) => d.id === m.department_id)?.name || "General",
-    skills: [],
-    joinDate: m.join_date,
-    avatar: "teal",
-    points: m.points,
-    attendance: Number(m.attendance),
-    performanceScore: Number(m.performance_score),
-    status: m.status,
-    certificates: [],
-    activity: [],
-    createdBy: m.created_by || undefined,
-    createdAt: m.created_at,
-    lastLogin: m.last_login || undefined,
-  };
-}
-
-// Guarantees a row exists in `members` for the given auth user, and returns the
-// canonical User (with the real members.id). This keeps currentUser.id aligned
-// with members.id so direct messages and member lists work correctly.
-export async function ensureMember(opts: {
-  email: string;
-  name?: string;
-  username?: string;
-  role?: string;
-  specialNumber?: string;
-}): Promise<User | null> {
-  if (!isSupabaseConfigured) return null;
-  const { data: departments } = await supabase.from("departments").select("id,name");
-
-  // Already exists?
-  const { data: existing } = await supabase.from("members").select("*").eq("email", opts.email).maybeSingle();
-  if (existing) {
-    await supabase.from("members").update({ last_login: new Date().toISOString() }).eq("id", existing.id);
-    return mapMemberRow({ ...existing, last_login: new Date().toISOString() }, departments || []);
-  }
-
-  // Generate a unique member_id / special_number based on current count.
-  const { count } = await supabase.from("members").select("*", { count: "exact", head: true });
-  const next = (count || 0) + 1;
-  const suffix = Math.random().toString(36).slice(2, 5).toUpperCase();
-  const row = {
-    username: opts.username || opts.email.split("@")[0],
-    member_id: `SOC-2026-${String(next).padStart(4, "0")}`,
-    special_number: opts.specialNumber || `SM_${26200 + next}_${suffix}`,
-    name: opts.name || opts.email.split("@")[0],
-    email: opts.email,
-    role: opts.role || "General Member",
-    position: "Member",
-    status: "Active",
-    attendance: 0,
-    points: 0,
-    performance_score: 0,
-    join_date: new Date().toISOString().slice(0, 10),
-    created_at: new Date().toISOString(),
-    last_login: new Date().toISOString(),
-  };
-  const { data: inserted, error } = await supabase.from("members").insert(row).select("*").maybeSingle();
-  if (error) {
-    console.error("ensureMember insert failed", error);
-    return null;
-  }
-  return inserted ? mapMemberRow(inserted, departments || []) : null;
-}
-
-export async function uploadToSupabaseStorage(path: string, file: File) {
-  if (!isSupabaseConfigured) throw new Error("Supabase is not configured");
-  const { error } = await supabase.storage.from(SUPABASE_STORAGE_BUCKET).upload(path, file, {
-    upsert: true,
-    contentType: file.type,
-  });
-  if (error) throw error;
-  const { data } = supabase.storage.from(SUPABASE_STORAGE_BUCKET).getPublicUrl(path);
-  return data.publicUrl;
-}
-
-export async function callSupabaseAdmin(action: string, payload: Record<string, unknown>) {
-  const response = await fetch("/api/supabase/admin-user", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ action, ...payload }),
-  });
-  const text = await response.text();
-  const json = text ? JSON.parse(text) : {};
-  if (!response.ok) throw new Error(json.error || "Supabase admin function failed");
-  return json;
-}
-
-export async function updateMemberRow(id: string, member: Partial<User>, depId: string | null) {
-  if (!isSupabaseConfigured || !isUuid(id)) return;
-  const { error } = await supabase.from("members").update({
-    username: member.username,
-    name: member.name,
-    email: member.email,
-    phone: member.phone,
-    role: member.role,
-    department_id: depId,
-    position: member.position,
-    status: member.status,
-    profile_photo_url: member.photoUrl,
-    attendance: member.attendance,
-    points: member.points,
-    performance_score: member.performanceScore,
-  }).eq("id", id);
-  if (error) throw error;
+function Section({ title, items, canManage, onEdit, onDelete, onDuplicate, onArchive, onStartAttendance }: any) {
+  return (
+    <div>
+      <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-500 mb-3">{title}</h2>
+      {items.length === 0 ? <p className="text-sm text-slate-500">No records.</p> : null}
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+        {items.map((e: Event) => (
+          <Card key={e.id} className="p-5">
+            <div className="flex items-center justify-between gap-2 mb-2">
+              <Badge tone={(e.type || "event") === "meeting" ? "amber" : "indigo"}>{(e.type || "event") === "meeting" ? "Meeting" : "Event"}</Badge>
+              <Badge tone={e.status === "Completed" ? "emerald" : e.status === "Archived" ? "slate" : "sky"}>{e.status}</Badge>
+            </div>
+            <h3 className="font-semibold text-lg">{e.title}</h3>
+            <p className="text-sm text-slate-500 mt-1 line-clamp-2">{e.description}</p>
+            <div className="mt-4 space-y-1 text-xs text-slate-500">
+              <p className="flex items-center gap-2"><CalendarDays className="h-3 w-3" /> {new Date(e.date).toLocaleString()}</p>
+              <p className="flex items-center gap-2"><MapPin className="h-3 w-3" /> {e.location}</p>
+              <p className="flex items-center gap-2"><Users2 className="h-3 w-3" /> {e.registered}/{e.capacity} registered · {e.attended} attended</p>
+            </div>
+            <div className="mt-4 grid grid-cols-3 gap-2 text-center text-sm">
+              <div className="rounded-lg bg-slate-100 dark:bg-white/5 p-2"><p className="text-[10px] uppercase text-slate-500">Budget</p><p className="font-bold">{e.budget}</p></div>
+              <div className="rounded-lg bg-slate-100 dark:bg-white/5 p-2"><p className="text-[10px] uppercase text-slate-500">Inc</p><p className="font-bold">{e.income}</p></div>
+              <div className="rounded-lg bg-slate-100 dark:bg-white/5 p-2"><p className="text-[10px] uppercase text-slate-500">Exp</p><p className="font-bold">{e.expense}</p></div>
+            </div>
+            <div className="mt-4 flex flex-wrap gap-2">
+              <Button size="sm" variant="outline" onClick={() => onStartAttendance(e.id)}>Start Attendance</Button>
+              {canManage && <Button size="sm" variant="ghost" onClick={() => onEdit(e)}><Pencil className="h-3 w-3" /></Button>}
+              {canManage && <Button size="sm" variant="ghost" onClick={() => onDuplicate(e.id)}><Copy className="h-3 w-3" /></Button>}
+              {canManage && <Button size="sm" variant="ghost" onClick={() => onArchive(e.id)}><Archive className="h-3 w-3" /></Button>}
+              {canManage && <Button size="sm" variant="ghost" onClick={() => onDelete(e.id)}><Trash2 className="h-3 w-3" /></Button>}
+            </div>
+          </Card>
+        ))}
+      </div>
+    </div>
+  );
 }

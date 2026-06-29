@@ -27,7 +27,7 @@ import Chat from "./pages/Chat";
 import Architecture from "./pages/Architecture";
 import AccountManagement from "./pages/AccountManagement";
 import PasswordVault from "./pages/PasswordVault";
-import PublicMemberProfile from "./pages/PublicMemberProfile";
+import PublicMemberProfile from "./pages/Public MemberProfile.tsx";
 import type { ReactNode } from "react";
 import { canAccess, type Section } from "./lib/access";
 
