@@ -4,44 +4,21 @@ import { useApp } from "../context/AppContext";
 import type { Role, User } from "../types";
 import { Edit2, Plus, Search, Trash2, UserCircle2, Award, Activity, Mail, Phone, Briefcase } from "lucide-react";
 
-// Common roles for each department
-const departmentRoles: Record<string, Role[]> = {
-  "Founder & President": ["Founder", "President"],
-  "President": ["President", "Co-Founder"],
-  "HR Manager": ["HR Manager", "Executive"],
-  "Outreach Member": ["Outreach Manager", "Executive"],
-  "Video Editor": ["Video Editor", "Event Manager"],
-  "Women Lead": ["Executive", "Department Lead"],
-  "Decor Lead": ["Department Lead", "Event Manager"],
-  "Decor": ["Event Manager", "General Member"],
-  "Graphic": ["Event Manager", "General Member"],
-  "Graphics": ["Event Manager", "General Member"],
-  "General Secretary": ["Executive", "HR Manager"],
-  "Project Manager": ["Department Lead", "Event Manager"],
-  "Event Manager": ["Event Manager", "Department Lead"],
-  "Technical Lead": ["Department Lead", "Event Manager"],
-  "Media Graphic Designers": ["Event Manager", "General Member"],
-  "Organizer": ["Event Manager", "General Member"],
-  "Graphic Designer": ["Event Manager", "General Member"],
-};
-
-const allRoles: Role[] = [
+const roles: Role[] = [
   "Super Admin",
   "Founder",
   "Co-Founder",
-  "President",
   "Executive",
   "HR Manager",
   "Department Lead",
   "Finance Manager",
   "Outreach Manager",
   "Event Manager",
-  "Video Editor",
   "General Member",
 ];
 
 export default function Members() {
-  const { users, addUser, updateUser, deleteUser, suspendUser, resetUserPassword, hasPermission, departments } = useApp();
+  const { users, addUser, updateUser, deleteUser, suspendUser, resetUserPassword, hasPermission } = useApp();
   const canManage = hasPermission("manage_members");
   const [query, setQuery] = useState("");
   const [filterDept, setFilterDept] = useState("All");
@@ -50,7 +27,7 @@ export default function Members() {
   const [viewing, setViewing] = useState<User | null>(null);
   const [open, setOpen] = useState(false);
 
-  const deptNames = useMemo(() => ["All", ...Array.from(new Set(users.map((u) => u.department))).sort()], [users]);
+  const departments = useMemo(() => Array.from(new Set(users.map((u) => u.department))).sort(), [users]);
 
   const filtered = useMemo(() => {
     return users.filter((u) => {
@@ -97,11 +74,12 @@ export default function Members() {
           <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search by name, ID, email…" className="pl-10" />
         </div>
         <Select value={filterDept} onChange={(e) => setFilterDept(e.target.value)} className="md:w-48">
-          {deptNames.map((d) => <option key={d}>{d}</option>)}
+          <option>All</option>
+          {departments.map((d) => <option key={d}>{d}</option>)}
         </Select>
         <Select value={filterRole} onChange={(e) => setFilterRole(e.target.value)} className="md:w-56">
           <option>All</option>
-          {allRoles.map((r) => <option key={r}>{r}</option>)}
+          {roles.map((r) => <option key={r}>{r}</option>)}
         </Select>
       </Card>
 
@@ -161,7 +139,6 @@ export default function Members() {
         open={open}
         onClose={() => setOpen(false)}
         editing={editing}
-        departments={deptNames.filter(d => d !== "All")}
         onSave={(data) => {
           if (editing) updateUser(editing.id, data);
           else addUser(data as Omit<User, "id" | "memberId">);
@@ -281,13 +258,11 @@ function MemberFormModal({
   open,
   onClose,
   editing,
-  departments,
   onSave,
 }: {
   open: boolean;
   onClose: () => void;
   editing: User | null;
-  departments: string[];
   onSave: (u: Partial<User>) => void;
 }) {
   type MemberForm = Partial<User> & { temporaryPassword?: string };
@@ -299,7 +274,7 @@ function MemberFormModal({
       temporaryPassword: "",
       role: "General Member",
       position: "Member",
-      department: departments[0] || "General",
+      department: "General",
       specialNumber: "",
       skills: [],
       points: 0,
@@ -312,8 +287,7 @@ function MemberFormModal({
       avatar: "teal",
     }
   );
-
-  // Re-init when modal opens
+  // re-init when modal opens for different user
   useEffect(() => {
     setForm(
       editing || {
@@ -323,7 +297,7 @@ function MemberFormModal({
         temporaryPassword: "",
         role: "General Member",
         position: "Member",
-        department: departments[0] || "General",
+        department: "General",
         specialNumber: "",
         skills: [],
         points: 0,
@@ -336,13 +310,9 @@ function MemberFormModal({
         avatar: "teal",
       }
     );
-  }, [editing, open, departments]);
+  }, [editing, open]);
 
   const upd = (k: string, v: any) => setForm((f) => ({ ...f, [k]: v }));
-
-  // Get available roles for selected department
-  const availableRoles = form.department ? (departmentRoles[form.department as string] || allRoles) : allRoles;
-
   const generateCredentials = () => {
     const base = (form.name || "member").toLowerCase().replace(/\(.+?\)/g, "").trim().replace(/\s+/g, ".").replace(/[^a-z.]/g, "");
     const temp = "SOC-" + Math.random().toString(36).slice(2, 8).toUpperCase();
@@ -370,30 +340,18 @@ function MemberFormModal({
           <Input value={form.temporaryPassword || ""} onChange={(e) => upd("temporaryPassword", e.target.value)} placeholder="Temporary password for Supabase Auth" />
         </div>
         <div>
-          <Label>Department</Label>
-          <Select value={form.department || ""} onChange={(e) => {
-            const dept = e.target.value;
-            setForm((f) => ({
-              ...f,
-              department: dept,
-              // Auto-select first available role for this department
-              role: (departmentRoles[dept] || allRoles)[0],
-              position: dept,
-            }));
-          }}>
-            {departments.map((d) => <option key={d}>{d}</option>)}
-          </Select>
-        </div>
-        <div>
-          <Label>Role in {form.department || "Department"}</Label>
+          <Label>Role</Label>
           <Select value={form.role as string} onChange={(e) => upd("role", e.target.value)}>
-            {availableRoles.map((r) => <option key={r}>{r}</option>)}
+            {roles.map((r) => <option key={r}>{r}</option>)}
           </Select>
-          <p className="text-[10px] text-slate-500 mt-1">Department-specific role options</p>
         </div>
         <div>
           <Label>Position</Label>
           <Input value={form.position || ""} onChange={(e) => upd("position", e.target.value)} />
+        </div>
+        <div>
+          <Label>Department</Label>
+          <Input value={form.department || ""} onChange={(e) => upd("department", e.target.value)} />
         </div>
         <div>
           <Label>Special Number</Label>
