@@ -33,6 +33,187 @@ function isUuid(id?: string) {
   return !!id && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id);
 }
 
+/* ===================== TASKS (direct CRUD) ===================== */
+function taskRow(t: Task) {
+  return {
+    title: t.title,
+    description: t.description,
+    deadline: t.deadline,
+    priority: t.priority,
+    status: t.status,
+    created_by: isUuid(t.createdBy) ? t.createdBy : null,
+    remarks: t.remarks || null,
+    review_notes: t.reviewNotes || null,
+    approved_by: isUuid(t.approvedBy) ? t.approvedBy : null,
+  };
+}
+
+export async function insertTask(t: Task): Promise<string | null> {
+  if (!isSupabaseConfigured) return null;
+  const { data, error } = await supabase.from("tasks").insert(taskRow(t)).select("id").maybeSingle();
+  if (error) throw error;
+  const taskId = data?.id || null;
+  if (taskId) {
+    const assigneeRows = (t.assignees || []).filter(isUuid).map((memberId) => ({ task_id: taskId, member_id: memberId }));
+    if (assigneeRows.length) await supabase.from("task_assignees").insert(assigneeRows);
+  }
+  return taskId;
+}
+
+export async function updateTaskRow(id: string, t: Task) {
+  if (!isSupabaseConfigured || !isUuid(id)) return;
+  const { error } = await supabase.from("tasks").update(taskRow(t)).eq("id", id);
+  if (error) throw error;
+
+  await supabase.from("task_assignees").delete().eq("task_id", id);
+  const assigneeRows = (t.assignees || []).filter(isUuid).map((memberId) => ({ task_id: id, member_id: memberId }));
+  if (assigneeRows.length) await supabase.from("task_assignees").insert(assigneeRows);
+
+  const submitterId = assigneeRows[0]?.member_id;
+  if (t.submission && submitterId) {
+    const { data: existingSub } = await supabase.from("task_submissions").select("id").eq("task_id", id).maybeSingle();
+    const subRow = {
+      task_id: id,
+      member_id: submitterId,
+      file_name: t.submission.fileName,
+      file_url: t.submission.fileData || null,
+      file_type: t.submission.fileType || null,
+      comments: t.submission.notes || "",
+      submitted_at: t.submission.submittedAt,
+    };
+    if (existingSub?.id) await supabase.from("task_submissions").update(subRow).eq("id", existingSub.id);
+    else await supabase.from("task_submissions").insert(subRow);
+  }
+}
+
+export async function deleteTaskRow(id: string) {
+  if (!isSupabaseConfigured || !isUuid(id)) return;
+  const { error } = await supabase.from("tasks").delete().eq("id", id);
+  if (error) throw error;
+}
+
+export async function loadTasks(): Promise<Task[]> {
+  if (!isSupabaseConfigured) return [];
+  const [{ data: tasks, error }, { data: assignees }, { data: submissions }] = await Promise.all([
+    supabase.from("tasks").select("*").order("created_at", { ascending: false }),
+    supabase.from("task_assignees").select("*"),
+    supabase.from("task_submissions").select("*"),
+  ]);
+  if (error) throw error;
+  return (tasks || []).map((t: any) => {
+    const subs = (submissions || []).filter((s: any) => s.task_id === t.id);
+    const sub = subs.sort((a: any, b: any) => new Date(b.submitted_at).getTime() - new Date(a.submitted_at).getTime())[0];
+    return {
+      id: t.id,
+      title: t.title,
+      description: t.description,
+      assignees: (assignees || []).filter((a: any) => a.task_id === t.id).map((a: any) => a.member_id),
+      createdBy: t.created_by || "",
+      createdAt: t.created_at,
+      deadline: t.deadline,
+      priority: t.priority,
+      status: t.status,
+      remarks: t.remarks || undefined,
+      reviewNotes: t.review_notes || undefined,
+      approvedBy: t.approved_by || undefined,
+      submission: sub ? { fileName: sub.file_name, fileData: sub.file_url, fileType: sub.file_type, notes: sub.comments || "", submittedAt: sub.submitted_at } : undefined,
+    };
+  });
+}
+
+/* ===================== OUTREACH (direct CRUD) ===================== */
+function outreachRow(o: OutreachContact) {
+  return {
+    organization: o.organization,
+    contact_name: o.name,
+    type: o.type,
+    email: o.email || null,
+    phone: o.phone || null,
+    stage: o.stage,
+    notes: o.notes || "",
+    last_contact: o.lastContact || null,
+  };
+}
+
+export async function insertOutreach(o: OutreachContact): Promise<string | null> {
+  if (!isSupabaseConfigured) return null;
+  const { data, error } = await supabase.from("outreach").insert(outreachRow(o)).select("id").maybeSingle();
+  if (error) throw error;
+  return data?.id || null;
+}
+
+export async function updateOutreachRow(id: string, o: OutreachContact) {
+  if (!isSupabaseConfigured || !isUuid(id)) return;
+  const { error } = await supabase.from("outreach").update(outreachRow(o)).eq("id", id);
+  if (error) throw error;
+}
+
+export async function deleteOutreachRow(id: string) {
+  if (!isSupabaseConfigured || !isUuid(id)) return;
+  const { error } = await supabase.from("outreach").delete().eq("id", id);
+  if (error) throw error;
+}
+
+export async function loadOutreach(): Promise<OutreachContact[]> {
+  if (!isSupabaseConfigured) return [];
+  const { data, error } = await supabase.from("outreach").select("*").order("created_at", { ascending: false });
+  if (error) throw error;
+  return (data || []).map((o: any) => ({
+    id: o.id,
+    name: o.contact_name,
+    organization: o.organization,
+    type: o.type,
+    email: o.email || "",
+    phone: o.phone || "",
+    stage: o.stage,
+    notes: o.notes,
+    lastContact: o.last_contact || o.created_at,
+  }));
+}
+
+/* ===================== HR APPLICATIONS (direct CRUD) ===================== */
+function applicationRow(a: Application) {
+  return {
+    name: a.name,
+    email: a.email,
+    phone: a.phone || null,
+    position: a.position,
+    stage: a.stage,
+    notes: a.notes || "",
+    score: a.score ?? null,
+  };
+}
+
+export async function insertApplication(a: Application): Promise<string | null> {
+  if (!isSupabaseConfigured) return null;
+  const { data, error } = await supabase.from("hr_applications").insert(applicationRow(a)).select("id").maybeSingle();
+  if (error) throw error;
+  return data?.id || null;
+}
+
+export async function updateApplicationRow(id: string, a: Application) {
+  if (!isSupabaseConfigured || !isUuid(id)) return;
+  const { error } = await supabase.from("hr_applications").update(applicationRow(a)).eq("id", id);
+  if (error) throw error;
+}
+
+export async function loadApplications(): Promise<Application[]> {
+  if (!isSupabaseConfigured) return [];
+  const { data, error } = await supabase.from("hr_applications").select("*").order("applied_at", { ascending: false });
+  if (error) throw error;
+  return (data || []).map((a: any) => ({
+    id: a.id,
+    name: a.name,
+    email: a.email,
+    phone: a.phone || "",
+    position: a.position,
+    stage: a.stage,
+    appliedAt: a.applied_at,
+    notes: a.notes,
+    score: a.score || undefined,
+  }));
+}
+
 export async function loadErpState(): Promise<ErpStateSnapshot | null> {
   if (!isSupabaseConfigured) return null;
   const [members, departments, events, finance, outreach, applications, notifications, attendance, audit, chat, tasks, assignees, submissions] = await Promise.all([
