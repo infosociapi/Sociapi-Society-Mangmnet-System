@@ -30,6 +30,7 @@ import {
 import {
   callSupabaseAdmin,
   clearChatThread,
+  deleteAttendanceRow,
   deleteChatMessage,
   deleteDepartmentRow,
   deleteEventRow,
@@ -119,6 +120,8 @@ interface AppState {
   markAllRead: () => void;
 
   markAttendance: (userId: string, method: AttendanceRecord["method"], status: AttendanceRecord["status"], eventId?: string, date?: string) => { ok: boolean; duplicate?: boolean };
+  updateAttendanceRecord: (id: string, patch: Partial<Pick<AttendanceRecord, "status" | "date" | "method" | "eventId">>) => void;
+  deleteAttendanceRecord: (id: string) => void;
 
   logActivity: (action: string, category: ActivityLog["category"], target?: string) => void;
   hasPermission: (perm: Permission) => boolean;
@@ -214,7 +217,11 @@ const resetTokens = new Map<string, string>();
 export function AppProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<PersistShape>(defaultState);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
-  const [theme, setThemeState] = useState<"light" | "dark">("dark");
+  const [theme, setThemeState] = useState<"light" | "dark">(() => {
+    if (typeof window === "undefined") return "dark";
+    const saved = window.localStorage.getItem("sociapi-theme");
+    return saved === "light" || saved === "dark" ? saved : "dark";
+  });
   const [hydrated, setHydrated] = useState(false);
 
   useEffect(() => {
@@ -281,6 +288,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     document.documentElement.classList.toggle("dark", theme === "dark");
+    window.localStorage.setItem("sociapi-theme", theme);
   }, [theme]);
 
   const setTheme = useCallback((t: "light" | "dark") => setThemeState(t), []);
@@ -816,6 +824,55 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return { ok: !duplicate, duplicate };
   };
 
+  // Direct edit of any existing attendance record (any past date, any field).
+  // Unlike markAttendance, this never blocks on duplicates — it's a straight admin override.
+  const updateAttendanceRecord: AppState["updateAttendanceRecord"] = (id, patch) => {
+    let updatedRec: AttendanceRecord | null = null;
+    setState((s) => {
+      const allRecs = s.attendance.map((a) => {
+        if (a.id !== id) return a;
+        updatedRec = { ...a, ...patch };
+        return updatedRec;
+      });
+      if (!updatedRec) return s;
+      const affectedUserId = updatedRec.userId;
+      const recompute = (u: User) => {
+        const mine = allRecs.filter((a) => a.userId === u.id);
+        if (mine.length === 0) return 0;
+        const present = mine.filter((m) => m.status === "Present").length;
+        return Math.round((present / mine.length) * 100);
+      };
+      const users = s.users.map((u) =>
+        u.id === affectedUserId
+          ? { ...u, attendance: recompute(u), activity: [{ date: new Date().toISOString(), action: `Attendance record edited (now ${updatedRec!.status})` }, ...u.activity].slice(0, 50) }
+          : { ...u, attendance: recompute(u) }
+      );
+      return { ...s, attendance: allRecs, users };
+    });
+    if (updatedRec) {
+      void upsertAttendanceRecord(updatedRec).catch((error) => console.error("Attendance edit save failed", error));
+      _log(currentUser, `Edited attendance record`, "attendance", id);
+    }
+  };
+
+  const deleteAttendanceRecord: AppState["deleteAttendanceRecord"] = (id) => {
+    setState((s) => {
+      const target = s.attendance.find((a) => a.id === id);
+      const allRecs = s.attendance.filter((a) => a.id !== id);
+      if (!target) return { ...s, attendance: allRecs };
+      const recompute = (u: User) => {
+        const mine = allRecs.filter((a) => a.userId === u.id);
+        if (mine.length === 0) return 0;
+        const present = mine.filter((m) => m.status === "Present").length;
+        return Math.round((present / mine.length) * 100);
+      };
+      const users = s.users.map((u) => (u.id === target.userId ? { ...u, attendance: recompute(u) } : u));
+      return { ...s, attendance: allRecs, users };
+    });
+    void deleteAttendanceRow(id).catch((error) => console.error("Attendance delete save failed", error));
+    _log(currentUser, `Deleted attendance record`, "attendance", id);
+  };
+
   const hasPermission = useCallback(
     (perm: Permission) => {
       if (!currentUser) return false;
@@ -869,6 +926,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       addNotification,
       markAllRead,
       markAttendance,
+      updateAttendanceRecord,
+      deleteAttendanceRecord,
       logActivity,
       hasPermission,
       isSuperAdmin,

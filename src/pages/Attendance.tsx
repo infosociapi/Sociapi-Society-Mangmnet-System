@@ -3,11 +3,11 @@ import QRCode from "qrcode";
 import { useSearchParams } from "react-router-dom";
 import { Avatar, Badge, Button, Card, Input, Label, Modal, Select } from "../components/ui";
 import { useApp } from "../context/AppContext";
-import { CheckCheck, Clock, QrCode, ScanLine, ShieldAlert, XCircle } from "lucide-react";
+import { CheckCheck, Clock, ListFilter, Pencil, QrCode, ScanLine, ShieldAlert, Trash2, XCircle } from "lucide-react";
 import { Bar, BarChart, CartesianGrid, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 
 export default function Attendance() {
-  const { users, attendance, markAttendance, events } = useApp();
+  const { users, attendance, markAttendance, updateAttendanceRecord, deleteAttendanceRecord, events } = useApp();
   const [searchParams] = useSearchParams();
   const [qrOpen, setQrOpen] = useState(false);
   const [eventId, setEventId] = useState<string>(searchParams.get("eventId") || "");
@@ -15,6 +15,13 @@ export default function Attendance() {
   const [scanInput, setScanInput] = useState("");
   const [scanned, setScanned] = useState<{ name: string; duplicate: boolean; error?: string } | null>(null);
   const [memberQr, setMemberQr] = useState<{ user: any; img: string } | null>(null);
+
+  // --- Edit Attendance panel state ---
+  const [editOpen, setEditOpen] = useState(false);
+  const [editUserFilter, setEditUserFilter] = useState<string>("All");
+  const [editFrom, setEditFrom] = useState<string>("");
+  const [editTo, setEditTo] = useState<string>("");
+  const [editingRecord, setEditingRecord] = useState<any | null>(null);
 
   useEffect(() => {
     if (events.length && !eventId) setEventId(events[0].id);
@@ -100,6 +107,20 @@ export default function Attendance() {
     setMemberQr({ user: u, img });
   };
 
+  const editFilteredRecords = useMemo(() => {
+    return [...attendance]
+      .filter((a) => {
+        if (editUserFilter !== "All" && a.userId !== editUserFilter) return false;
+        if (editFrom && new Date(a.date) < new Date(editFrom)) return false;
+        if (editTo && new Date(a.date) > new Date(editTo + "T23:59:59")) return false;
+        return true;
+      })
+      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  }, [attendance, editUserFilter, editFrom, editTo]);
+
+  const userName = (id: string) => users.find((u) => u.id === id)?.name || "Unknown member";
+  const eventName = (id?: string) => (id ? events.find((e) => e.id === id)?.title : null);
+
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -109,9 +130,14 @@ export default function Attendance() {
             Manual, QR, backdated event and meeting attendance.
           </p>
         </div>
-        <Button icon={<QrCode className="h-4 w-4" />} onClick={() => setQrOpen(true)}>
-          Open QR Scanner
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" icon={<ListFilter className="h-4 w-4" />} onClick={() => setEditOpen(true)}>
+            Edit Attendance
+          </Button>
+          <Button icon={<QrCode className="h-4 w-4" />} onClick={() => setQrOpen(true)}>
+            Open QR Scanner
+          </Button>
+        </div>
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -326,6 +352,135 @@ export default function Attendance() {
           </div>
         )}
       </Modal>
+
+      <Modal open={editOpen} onClose={() => setEditOpen(false)} title="Edit Attendance Records" size="lg">
+        <div className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div>
+              <Label>Member</Label>
+              <Select value={editUserFilter} onChange={(e) => setEditUserFilter(e.target.value)}>
+                <option value="All">All members</option>
+                {users.map((u) => (
+                  <option key={u.id} value={u.id}>{u.name}</option>
+                ))}
+              </Select>
+            </div>
+            <div>
+              <Label>From</Label>
+              <Input type="date" value={editFrom} onChange={(e) => setEditFrom(e.target.value)} />
+            </div>
+            <div>
+              <Label>To</Label>
+              <Input type="date" value={editTo} onChange={(e) => setEditTo(e.target.value)} />
+            </div>
+          </div>
+
+          <div className="max-h-[420px] overflow-y-auto rounded-xl border border-slate-200 dark:border-white/10">
+            <table className="w-full text-sm">
+              <thead className="bg-slate-100 dark:bg-white/5 text-xs uppercase tracking-wider text-slate-500 sticky top-0">
+                <tr>
+                  <th className="text-left p-3">Member</th>
+                  <th className="text-left p-3">Date</th>
+                  <th className="text-left p-3">Event</th>
+                  <th className="text-left p-3">Method</th>
+                  <th className="text-left p-3">Status</th>
+                  <th className="text-right p-3">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-200 dark:divide-white/10">
+                {editFilteredRecords.length === 0 && (
+                  <tr>
+                    <td colSpan={6} className="p-6 text-center text-slate-500">No attendance records match this filter.</td>
+                  </tr>
+                )}
+                {editFilteredRecords.map((a) => (
+                  <tr key={a.id} className="hover:bg-slate-50 dark:hover:bg-white/5">
+                    <td className="p-3 font-semibold">{userName(a.userId)}</td>
+                    <td className="p-3 text-slate-500">{new Date(a.date).toLocaleString()}</td>
+                    <td className="p-3 text-slate-500">{eventName(a.eventId) || "General"}</td>
+                    <td className="p-3"><Badge tone="slate">{a.method}</Badge></td>
+                    <td className="p-3">
+                      <Badge tone={a.status === "Present" ? "emerald" : a.status === "Late" ? "amber" : a.status === "Excused" ? "slate" : "rose"}>
+                        {a.status}
+                      </Badge>
+                    </td>
+                    <td className="p-3 text-right">
+                      <div className="flex justify-end gap-1">
+                        <Button size="sm" variant="ghost" icon={<Pencil className="h-3 w-3" />} onClick={() => setEditingRecord(a)}>Edit</Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          icon={<Trash2 className="h-3 w-3" />}
+                          onClick={() => {
+                            if (confirm(`Delete this attendance record for ${userName(a.userId)}?`)) deleteAttendanceRecord(a.id);
+                          }}
+                        >
+                          Delete
+                        </Button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <div className="flex justify-end gap-2 mt-6">
+          <Button variant="ghost" onClick={() => setEditOpen(false)}>Close</Button>
+        </div>
+      </Modal>
+
+      <Modal open={!!editingRecord} onClose={() => setEditingRecord(null)} title="Edit Attendance Record">
+        {editingRecord && (
+          <EditRecordForm
+            record={editingRecord}
+            memberName={userName(editingRecord.userId)}
+            onSave={(patch) => {
+              updateAttendanceRecord(editingRecord.id, patch);
+              setEditingRecord(null);
+            }}
+            onCancel={() => setEditingRecord(null)}
+          />
+        )}
+      </Modal>
+    </div>
+  );
+}
+
+function EditRecordForm({
+  record,
+  memberName,
+  onSave,
+  onCancel,
+}: {
+  record: { id: string; date: string; status: "Present" | "Absent" | "Late" | "Excused"; method: string };
+  memberName: string;
+  onSave: (patch: { status: "Present" | "Absent" | "Late" | "Excused"; date: string }) => void;
+  onCancel: () => void;
+}) {
+  const [status, setStatus] = useState<"Present" | "Absent" | "Late" | "Excused">(record.status);
+  const [date, setDate] = useState(new Date(record.date).toISOString().slice(0, 16));
+
+  return (
+    <div className="space-y-4">
+      <p className="text-sm text-slate-500">Editing record for <span className="font-semibold text-slate-800 dark:text-slate-200">{memberName}</span></p>
+      <div>
+        <Label>Date & Time</Label>
+        <Input type="datetime-local" value={date} onChange={(e) => setDate(e.target.value)} />
+      </div>
+      <div>
+        <Label>Status</Label>
+        <Select value={status} onChange={(e) => setStatus(e.target.value as any)}>
+          <option value="Present">Present</option>
+          <option value="Late">Late</option>
+          <option value="Absent">Absent</option>
+          <option value="Excused">Excused</option>
+        </Select>
+      </div>
+      <div className="flex justify-end gap-2 pt-2">
+        <Button variant="ghost" onClick={onCancel}>Cancel</Button>
+        <Button onClick={() => onSave({ status, date: new Date(date).toISOString() })}>Save Changes</Button>
+      </div>
     </div>
   );
 }
