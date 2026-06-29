@@ -41,6 +41,9 @@ import {
   insertDepartment,
   insertEvent,
   insertFinance,
+  insertTask,
+  insertApplication,
+  insertOutreach,
   loadAttendance,
   loadChats,
   loadDepartments,
@@ -53,6 +56,9 @@ import {
   updateEventRow,
   updateFinanceRow,
   updateMemberRow,
+  updateTaskRow,
+  updateApplicationRow,
+  updateOutreachRow,
   upsertAttendanceRecord,
 } from "../lib/supabaseStore";
 import { isSupabaseConfigured, supabase, supabaseConfigMessage } from "../lib/supabase";
@@ -651,6 +657,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const addTask: AppState["addTask"] = (t) => {
     const newT: Task = { ...t, id: "t" + Date.now(), createdAt: new Date().toISOString(), status: "Assigned" };
     setState((s) => ({ ...s, tasks: [...s.tasks, newT] }));
+    if (isSupabaseConfigured) {
+      insertTask(newT).catch((error) => console.error("Task insert failed", error));
+    }
     _log(currentUser, `Created task "${newT.title}"`, "tasks", newT.id);
   };
   const updateTask: AppState["updateTask"] = (id, patch) => {
@@ -682,6 +691,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
       }
       return { ...s, tasks, users };
     });
+    if (snap && isSupabaseConfigured) {
+      updateTaskRow(id, snap).catch((error) => console.error("Task update failed", error));
+    }
     _log(currentUser, `Updated task`, "tasks", id);
   };
   const deleteTask: AppState["deleteTask"] = (id) => {
@@ -752,11 +764,28 @@ export function AppProvider({ children }: { children: ReactNode }) {
   };
 
   const addOutreach: AppState["addOutreach"] = (o) => {
-    setState((s) => ({ ...s, outreach: [...s.outreach, { ...o, id: "o" + Date.now() }] }));
+    const newO = { ...o, id: "o" + Date.now() };
+    setState((s) => ({ ...s, outreach: [...s.outreach, newO] }));
+    if (isSupabaseConfigured) {
+      insertOutreach(newO).catch((error) => console.error("Outreach insert failed", error));
+    }
     _log(currentUser, `Added outreach contact: ${o.organization}`, "outreach");
   };
   const updateOutreach: AppState["updateOutreach"] = (id, patch) => {
-    setState((s) => ({ ...s, outreach: s.outreach.map((o) => (o.id === id ? { ...o, ...patch } : o)) }));
+    let updated: OutreachContact | undefined;
+    setState((s) => ({
+      ...s,
+      outreach: s.outreach.map((o) => {
+        if (o.id === id) {
+          updated = { ...o, ...patch };
+          return updated;
+        }
+        return o;
+      }),
+    }));
+    if (updated && isSupabaseConfigured) {
+      updateOutreachRow(id, updated).catch((error) => console.error("Outreach update failed", error));
+    }
     _log(currentUser, `Updated outreach contact`, "outreach", id);
   };
   const deleteOutreach: AppState["deleteOutreach"] = (id) => {
@@ -764,13 +793,29 @@ export function AppProvider({ children }: { children: ReactNode }) {
     _log(currentUser, `Deleted outreach contact`, "outreach", id);
   };
 
-  const addApplication: AppState["addApplication"] = (a) =>
-    setState((s) => ({ ...s, applications: [...s.applications, { ...a, id: "a" + Date.now() }] }));
-  const updateApplication: AppState["updateApplication"] = (id, patch) =>
+  const addApplication: AppState["addApplication"] = (a) => {
+    const newA = { ...a, id: "a" + Date.now() };
+    setState((s) => ({ ...s, applications: [...s.applications, newA] }));
+    if (isSupabaseConfigured) {
+      insertApplication(newA).catch((error) => console.error("Application insert failed", error));
+    }
+  };
+  const updateApplication: AppState["updateApplication"] = (id, patch) => {
+    let updated: Application | undefined;
     setState((s) => ({
       ...s,
-      applications: s.applications.map((a) => (a.id === id ? { ...a, ...patch } : a)),
+      applications: s.applications.map((a) => {
+        if (a.id === id) {
+          updated = { ...a, ...patch };
+          return updated;
+        }
+        return a;
+      }),
     }));
+    if (updated && isSupabaseConfigured) {
+      updateApplicationRow(id, updated).catch((error) => console.error("Application update failed", error));
+    }
+  };
 
   const addNotification: AppState["addNotification"] = (n) =>
     setState((s) => ({

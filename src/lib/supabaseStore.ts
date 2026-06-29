@@ -147,8 +147,6 @@ export async function updateOutreachRow(id: string, o: OutreachContact) {
   const { error } = await supabase.from("outreach").update(outreachRow(o)).eq("id", id);
   if (error) throw error;
 }
-
-export async function deleteOutreachRow(id: string) {
   if (!isSupabaseConfigured || !isUuid(id)) return;
   const { error } = await supabase.from("outreach").delete().eq("id", id);
   if (error) throw error;
@@ -196,8 +194,6 @@ export async function updateApplicationRow(id: string, a: Application) {
   const { error } = await supabase.from("hr_applications").update(applicationRow(a)).eq("id", id);
   if (error) throw error;
 }
-
-export async function loadApplications(): Promise<Application[]> {
   if (!isSupabaseConfigured) return [];
   const { data, error } = await supabase.from("hr_applications").select("*").order("applied_at", { ascending: false });
   if (error) throw error;
