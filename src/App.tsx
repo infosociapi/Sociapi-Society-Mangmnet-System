@@ -10,7 +10,7 @@ import Dashboard from "./pages/Dashboard";
 import Members from "./pages/Members";
 import Tasks from "./pages/Tasks";
 import Attendance from "./pages/Attendance";
-import AttendanceReport from "./pages/AttendanceReport.tsx";
+import AttendanceReport from "./pages/AttendanceReport";
 import Events from "./pages/Events";
 import Finance from "./pages/Finance";
 import HR from "./pages/HR";
@@ -27,6 +27,7 @@ import Chat from "./pages/Chat";
 import Architecture from "./pages/Architecture";
 import AccountManagement from "./pages/AccountManagement";
 import PasswordVault from "./pages/PasswordVault";
+import PublicMemberProfile from "./pages/PublicMemberProfile";
 import type { ReactNode } from "react";
 import { canAccess, type Section } from "./lib/access";
 
@@ -88,6 +89,7 @@ export default function App() {
             <Route path="settings" element={<RequireAccess section="settings"><Settings /></RequireAccess>} />
           </Route>
 
+          <Route path="/member/:memberId" element={<PublicMemberProfile />} />
           <Route path="*" element={<Navigate to="/login" replace />} />
         </Routes>
       </Router>

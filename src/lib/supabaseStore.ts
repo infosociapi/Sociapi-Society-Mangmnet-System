@@ -147,6 +147,7 @@ function eventRow(e: Event) {
   return {
     title: e.title,
     description: e.description,
+    type: e.type || "event",
     event_date: e.date,
     venue: e.location,
     capacity: e.capacity,
@@ -175,9 +176,20 @@ export async function deleteEventRow(id: string) {
   if (error) throw error;
 }
 
-export async function insertDepartment(name: string, description: string) {
+export async function insertDepartment(name: string, description: string, leadId?: string) {
   if (!isSupabaseConfigured) return;
-  const { error } = await supabase.from("departments").insert({ name, description });
+  const { error } = await supabase.from("departments").insert({ name, description, lead_id: isUuid(leadId) ? leadId : null });
+  if (error) throw error;
+}
+
+export async function updateDepartmentRow(id: string, patch: Partial<Department>) {
+  if (!isSupabaseConfigured || !isUuid(id)) return;
+  const { error } = await supabase.from("departments").update({
+    name: patch.name,
+    description: patch.description,
+    lead_id: isUuid(patch.leadId) ? patch.leadId : null,
+    updated_at: new Date().toISOString(),
+  }).eq("id", id);
   if (error) throw error;
 }
 
@@ -185,6 +197,13 @@ export async function deleteDepartmentRow(id: string) {
   if (!isSupabaseConfigured || !isUuid(id)) return;
   const { error } = await supabase.from("departments").delete().eq("id", id);
   if (error) throw error;
+}
+
+export async function loadDepartments(): Promise<Department[]> {
+  if (!isSupabaseConfigured) return [];
+  const { data, error } = await supabase.from("departments").select("*").order("name", { ascending: true });
+  if (error) throw error;
+  return (data || []).map((d: any) => ({ id: d.id, name: d.name, leadId: d.lead_id || undefined, description: d.description, createdAt: d.created_at }));
 }
 
 export async function loadEvents(): Promise<Event[]> {
@@ -249,6 +268,48 @@ export async function loadFinance(): Promise<FinanceEntry[]> {
     eventId: f.event_id || undefined,
     date: f.entry_date,
     reference: f.reference || undefined,
+  }));
+}
+
+/* ===================== ATTENDANCE (direct CRUD) ===================== */
+export async function upsertAttendanceRecord(rec: AttendanceRecord) {
+  if (!isSupabaseConfigured) return;
+  const row = {
+    member_id: rec.userId,
+    event_id: isUuid(rec.eventId) ? rec.eventId : null,
+    method: rec.method,
+    status: rec.status,
+    attendance_date: rec.date.slice(0, 10),
+    created_at: rec.date,
+  };
+  // update existing for same member/date/event; else insert
+  const { data: existing } = await supabase
+    .from("attendance")
+    .select("id")
+    .eq("member_id", rec.userId)
+    .eq("attendance_date", rec.date.slice(0, 10))
+    .eq("event_id", isUuid(rec.eventId) ? rec.eventId : null)
+    .maybeSingle();
+  if (existing?.id) {
+    const { error } = await supabase.from("attendance").update(row).eq("id", existing.id);
+    if (error) throw error;
+  } else {
+    const { error } = await supabase.from("attendance").insert(row);
+    if (error) throw error;
+  }
+}
+
+export async function loadAttendance(): Promise<AttendanceRecord[]> {
+  if (!isSupabaseConfigured) return [];
+  const { data, error } = await supabase.from("attendance").select("*").order("created_at", { ascending: false });
+  if (error) throw error;
+  return (data || []).map((a: any) => ({
+    id: a.id,
+    userId: a.member_id,
+    eventId: a.event_id || undefined,
+    method: a.method,
+    status: a.status,
+    date: a.created_at,
   }));
 }
 

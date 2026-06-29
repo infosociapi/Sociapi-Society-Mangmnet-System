@@ -1,243 +1,531 @@
-import { useEffect, useMemo, useState } from "react";
-import QRCode from "qrcode";
-import { useSearchParams } from "react-router-dom";
-import { Avatar, Badge, Button, Card, Input, Label, Modal, Select } from "../components/ui";
-import { useApp } from "../context/AppContext";
-import { CheckCheck, Clock, QrCode, ScanLine, XCircle, Calendar, AlertTriangle } from "lucide-react";
-import { Bar, BarChart, CartesianGrid, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import type {
+  ActivityLog,
+  Application,
+  AttendanceRecord,
+  ChatMessage,
+  Department,
+  Event,
+  FinanceEntry,
+  MessageTemplate,
+  NotificationItem,
+  OutreachContact,
+  Task,
+  User,
+} from "../types";
+import { isSupabaseConfigured, supabase, SUPABASE_STORAGE_BUCKET } from "./supabase";
 
-export default function AttendanceReport() {
-  const { users, attendance, markAttendance, events } = useApp();
-  const [searchParams] = useSearchParams();
-  const [qrOpen, setQrOpen] = useState(false);
-  const [eventId, setEventId] = useState<string>(searchParams.get("eventId") || "");
-  const [attendanceDate, setAttendanceDate] = useState(new Date().toISOString().slice(0, 10));
-  const [scanned, setScanned] = useState<{ name: string; duplicate: boolean; error?: string } | null>(null);
-  const [scanInput, setScanInput] = useState("");
+export interface ErpStateSnapshot {
+  users: User[];
+  tasks: Task[];
+  events: Event[];
+  finance: FinanceEntry[];
+  outreach: OutreachContact[];
+  applications: Application[];
+  templates: MessageTemplate[];
+  notifications: NotificationItem[];
+  attendance: AttendanceRecord[];
+  activityLogs: ActivityLog[];
+  departments: Department[];
+  chats: ChatMessage[];
+}
 
-  // Stats
-  const stats = useMemo(() => {
-    const present = attendance.filter((a) => a.status === "Present").length;
-    const late = attendance.filter((a) => a.status === "Late").length;
-    const absent = attendance.filter((a) => a.status === "Absent").length;
-    const excused = attendance.filter((a: any) => a.status === "Excused").length;
-    return { present, late, absent, excused };
-  }, [attendance]);
+function isUuid(id?: string) {
+  return !!id && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id);
+}
 
-  const last7 = useMemo(() => {
-    const arr = [];
-    for (let d = 6; d >= 0; d--) {
-      const day = new Date(Date.now() - d * 86400000);
-      const recs = attendance.filter((a) => new Date(a.date).toDateString() === day.toDateString());
-      arr.push({
-        day: day.toLocaleDateString("en", { weekday: "short" }),
-        Present: recs.filter((r) => r.status === "Present").length,
-        Late: recs.filter((r) => r.status === "Late").length,
-        Absent: recs.filter((r) => r.status === "Absent").length,
-        Excused: recs.filter((r: any) => r.status === "Excused").length,
-      });
-    }
-    return arr;
-  }, [attendance]);
+export async function loadErpState(): Promise<ErpStateSnapshot | null> {
+  if (!isSupabaseConfigured) return null;
+  const [members, departments, events, finance, outreach, applications, notifications, attendance, audit, chat, tasks, assignees, submissions] = await Promise.all([
+    supabase.from("members").select("*"),
+    supabase.from("departments").select("*"),
+    supabase.from("events").select("*"),
+    supabase.from("finance_entries").select("*"),
+    supabase.from("outreach").select("*"),
+    supabase.from("hr_applications").select("*"),
+    supabase.from("notifications").select("*"),
+    supabase.from("attendance").select("*"),
+    supabase.from("audit_logs").select("*"),
+    supabase.from("chat").select("*"),
+    supabase.from("tasks").select("*"),
+    supabase.from("task_assignees").select("*"),
+    supabase.from("task_submissions").select("*")
+  ]);
+  const errors = [members, departments, events, finance, outreach, applications, notifications, attendance, audit, chat, tasks, assignees, submissions].map((r) => r.error).filter(Boolean);
+  if (errors[0]) throw errors[0];
 
-  const methodBreakdown = useMemo(() => {
-    const m: Record<string, number> = {};
-    attendance.forEach((a) => (m[a.method] = (m[a.method] || 0) + 1));
-    return Object.entries(m).map(([name, value]) => ({ name, value }));
-  }, [attendance]);
-
-  const handleManualMark = (userId: string, status: "Present" | "Absent" | "Late" | "Excused") => {
-    markAttendance(userId, "Manual", status as any, eventId || undefined);
+  const users: User[] = (members.data || []).map((m: any) => ({
+    id: m.id,
+    username: m.username,
+    memberId: m.member_id,
+    specialNumber: m.special_number,
+    name: m.name,
+    email: m.email,
+    photoUrl: m.profile_photo_url || undefined,
+    phone: m.phone || "",
+    role: m.role,
+    position: m.position,
+    department: (departments.data || []).find((d: any) => d.id === m.department_id)?.name || "General",
+    skills: [],
+    joinDate: m.join_date,
+    avatar: "teal",
+    points: m.points,
+    attendance: Number(m.attendance),
+    performanceScore: Number(m.performance_score),
+    status: m.status,
+    certificates: [],
+    activity: [],
+    createdBy: m.created_by || undefined,
+    createdAt: m.created_at,
+    lastLogin: m.last_login || undefined,
+  }));
+  const tasksMapped: Task[] = (tasks.data || []).map((t: any) => {
+    const sub = (submissions.data || []).find((s: any) => s.task_id === t.id);
+    return {
+      id: t.id,
+      title: t.title,
+      description: t.description,
+      assignees: (assignees.data || []).filter((a: any) => a.task_id === t.id).map((a: any) => a.member_id),
+      createdBy: t.created_by || "",
+      createdAt: t.created_at,
+      deadline: t.deadline,
+      priority: t.priority,
+      status: t.status,
+      remarks: t.remarks || undefined,
+      reviewNotes: t.review_notes || undefined,
+      approvedBy: t.approved_by || undefined,
+      submission: sub ? { fileName: sub.file_name, fileData: sub.file_url, fileType: sub.file_type, notes: sub.comments || "", submittedAt: sub.submitted_at } : undefined,
+    };
+  });
+  return {
+    users,
+    departments: (departments.data || []).map((d: any) => ({ id: d.id, name: d.name, description: d.description, leadId: d.lead_id || undefined, createdAt: d.created_at })),
+    events: (events.data || []).map((e: any) => ({ id: e.id, title: e.title, description: e.description, type: e.type || "event", date: e.event_date, location: e.venue, capacity: e.capacity, registered: e.registered, attended: e.attended, status: e.status, feedback: [], budget: Number(e.budget), expense: Number(e.expense), income: Number(e.income) })),
+    finance: (finance.data || []).map((f: any) => ({ id: f.id, type: f.type, amount: Number(f.amount), description: f.description, category: f.category, eventId: f.event_id || undefined, date: f.entry_date })),
+    outreach: (outreach.data || []).map((o: any) => ({ id: o.id, name: o.contact_name, organization: o.organization, type: o.type, email: o.email || "", phone: o.phone || "", stage: o.stage, notes: o.notes, lastContact: o.last_contact || o.created_at })),
+    applications: (applications.data || []).map((a: any) => ({ id: a.id, name: a.name, email: a.email, phone: a.phone || "", position: a.position, stage: a.stage, appliedAt: a.applied_at, notes: a.notes, score: a.score || undefined })),
+    notifications: (notifications.data || []).map((n: any) => ({ id: n.id, userId: n.member_id || undefined, title: n.title, body: n.body, channel: n.channel, type: n.type, read: n.read, createdAt: n.created_at })),
+    attendance: (attendance.data || []).map((a: any) => ({ id: a.id, userId: a.member_id, eventId: a.event_id || undefined, method: a.method, status: a.status, date: a.created_at })),
+    activityLogs: (audit.data || []).map((l: any) => ({ id: l.id, actorId: l.actor_id || "", actorName: l.actor_name, action: l.action, target: l.target || undefined, category: l.category, createdAt: l.created_at })),
+    chats: (chat.data || []).map((c: any) => ({ id: c.id, fromId: c.from_member_id, toId: c.to_member_id || undefined, team: c.team || undefined, body: c.body, read: c.read, createdAt: c.created_at })),
+    tasks: tasksMapped,
+    templates: [],
   };
+}
 
-  const handleQrScan = () => {
-    let lookup = scanInput.trim();
-    try {
-      const parsed = JSON.parse(lookup);
-      lookup = parsed.memberId || parsed.specialNumber || parsed.name || lookup;
-    } catch {}
-    const member = users.find(
-      (u) =>
-        u.memberId.toLowerCase() === lookup.toLowerCase() ||
-        u.specialNumber.toLowerCase() === lookup.toLowerCase() ||
-        u.username.toLowerCase() === lookup.toLowerCase() ||
-        u.name.toLowerCase() === lookup.toLowerCase()
-    );
+// NOTE: events & finance are NOT bulk-saved here anymore (that caused duplicate
+// rows on every state change). They use direct insert/update/delete below.
+export async function saveErpState(data: ErpStateSnapshot): Promise<void> {
+  if (!isSupabaseConfigured) return;
+  // Only members are upserted in bulk, and email is unique so no duplicates can occur.
+  const { data: dbDeps } = await supabase.from("departments").select("id,name");
+  const depId = (name: string) => (dbDeps || []).find((d: any) => d.name === name)?.id || null;
+  const members = data.users
+    .filter((u) => isUuid(u.id))
+    .map((u) => ({
+      id: u.id,
+      username: u.username,
+      member_id: u.memberId,
+      special_number: u.specialNumber,
+      name: u.name,
+      email: u.email,
+      phone: u.phone || null,
+      profile_photo_url: u.photoUrl || null,
+      role: u.role,
+      department_id: depId(u.department),
+      position: u.position,
+      attendance: u.attendance,
+      points: u.points,
+      performance_score: u.performanceScore,
+      status: u.status,
+      last_login: u.lastLogin || null,
+    }));
+  if (members.length) await supabase.from("members").upsert(members, { onConflict: "id" });
+}
 
-    if (!member) {
-      setScanned({ name: "Not found", duplicate: true, error: "Member not found" });
-      setTimeout(() => setScanned(null), 2500);
-      return;
-    }
-
-    const r = markAttendance(member.id, "QR", "Present", eventId || undefined);
-    setScanned({ name: member.name, duplicate: !!r.duplicate });
-    setTimeout(() => setScanned(null), 2500);
-    setScanInput("");
+/* ===================== EVENTS (direct CRUD) ===================== */
+function eventRow(e: Event) {
+  return {
+    title: e.title,
+    description: e.description,
+    type: e.type || "event",
+    event_date: e.date,
+    venue: e.location,
+    capacity: e.capacity,
+    registered: e.registered,
+    attended: e.attended,
+    status: e.status,
+    budget: e.budget,
+    expense: e.expense,
+    income: e.income,
   };
+}
+export async function insertEvent(e: Event): Promise<string | null> {
+  if (!isSupabaseConfigured) return null;
+  const { data, error } = await supabase.from("events").insert(eventRow(e)).select("id").maybeSingle();
+  if (error) throw error;
+  return data?.id || null;
+}
+export async function updateEventRow(id: string, e: Event) {
+  if (!isSupabaseConfigured || !isUuid(id)) return;
+  const { error } = await supabase.from("events").update(eventRow(e)).eq("id", id);
+  if (error) throw error;
+}
+export async function deleteEventRow(id: string) {
+  if (!isSupabaseConfigured || !isUuid(id)) return;
+  const { error } = await supabase.from("events").delete().eq("id", id);
+  if (error) throw error;
+}
 
-  useEffect(() => {
-    if (events.length && !eventId) setEventId("");
-  }, [events, eventId]);
+export async function insertDepartment(name: string, description: string, leadId?: string) {
+  if (!isSupabaseConfigured) return;
+  const { error } = await supabase.from("departments").insert({ name, description, lead_id: isUuid(leadId) ? leadId : null });
+  if (error) throw error;
+}
 
-  return (
-    <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Attendance Report</h1>
-          <p className="text-sm text-slate-500">QR Scanner · Manual Assignment · Trends &amp; Breakdown</p>
-        </div>
-        <Button icon={<QrCode className="h-4 w-4" />} onClick={() => setQrOpen(true)}>
-          Open QR Scanner
-        </Button>
-      </div>
+export async function updateDepartmentRow(id: string, patch: Partial<Department>) {
+  if (!isSupabaseConfigured || !isUuid(id)) return;
+  const { error } = await supabase.from("departments").update({
+    name: patch.name,
+    description: patch.description,
+    lead_id: isUuid(patch.leadId) ? patch.leadId : null,
+    updated_at: new Date().toISOString(),
+  }).eq("id", id);
+  if (error) throw error;
+}
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <Card className="p-4">
-          <p className="text-xs text-slate-500 uppercase">Present</p>
-          <p className="text-2xl font-bold mt-1 text-emerald-600">{stats.present}</p>
-        </Card>
-        <Card className="p-4">
-          <p className="text-xs text-slate-500 uppercase">Late</p>
-          <p className="text-2xl font-bold mt-1 text-amber-600">{stats.late}</p>
-        </Card>
-        <Card className="p-4">
-          <p className="text-xs text-slate-500 uppercase">Absent</p>
-          <p className="text-2xl font-bold mt-1 text-rose-600">{stats.absent}</p>
-        </Card>
-        <Card className="p-4">
-          <p className="text-xs text-slate-500 uppercase">Excused</p>
-          <p className="text-2xl font-bold mt-1 text-slate-500">{stats.excused}</p>
-        </Card>
-      </div>
+export async function deleteDepartmentRow(id: string) {
+  if (!isSupabaseConfigured || !isUuid(id)) return;
+  const { error } = await supabase.from("departments").delete().eq("id", id);
+  if (error) throw error;
+}
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <Card className="lg:col-span-2 p-6">
-          <h3 className="font-semibold mb-4">Last 7 Days</h3>
-          <div className="h-64">
-            <ResponsiveContainer>
-              <BarChart data={last7}>
-                <CartesianGrid strokeDasharray="3 3" stroke="rgba(148,163,184,0.2)" />
-                <XAxis dataKey="day" stroke="#94a3b8" tick={{ fontSize: 12 }} />
-                <YAxis stroke="#94a3b8" tick={{ fontSize: 12 }} />
-                <Tooltip contentStyle={{ background: "rgba(15,23,42,0.95)", border: "none", borderRadius: 12, color: "#fff" }} />
-                <Bar dataKey="Present" stackId="a" fill="#10b981" radius={[8, 8, 0, 0]} />
-                <Bar dataKey="Late" stackId="a" fill="#f59e0b" />
-                <Bar dataKey="Excused" stackId="a" fill="#64748b" />
-                <Bar dataKey="Absent" stackId="a" fill="#f43f5e" radius={[8, 8, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
-        </Card>
+export async function loadDepartments(): Promise<Department[]> {
+  if (!isSupabaseConfigured) return [];
+  const { data, error } = await supabase.from("departments").select("*").order("name", { ascending: true });
+  if (error) throw error;
+  return (data || []).map((d: any) => ({ id: d.id, name: d.name, leadId: d.lead_id || undefined, description: d.description, createdAt: d.created_at }));
+}
 
-        <Card className="p-6">
-          <h3 className="font-semibold mb-4">By Method</h3>
-          {methodBreakdown.length === 0 ? (
-            <p className="text-sm text-slate-500 text-center py-10">No attendance records yet.</p>
-          ) : (
-            <>
-              <div className="h-56">
-                <ResponsiveContainer>
-                  <PieChart>
-                    <Pie data={methodBreakdown} dataKey="value" nameKey="name" innerRadius={40} outerRadius={75} paddingAngle={4}>
-                      {methodBreakdown.map((_, i) => (
-                        <Cell key={i} fill={["#6366f1", "#a855f7", "#10b981"][i % 3]} />
-                      ))}
-                    </Pie>
-                    <Tooltip contentStyle={{ background: "rgba(15,23,42,0.95)", border: "none", borderRadius: 12, color: "#fff" }} />
-                  </PieChart>
-                </ResponsiveContainer>
-              </div>
-              <div className="mt-2 space-y-1 text-xs">
-                {methodBreakdown.map((m, i) => (
-                  <div key={m.name} className="flex items-center justify-between">
-                    <span className="flex items-center gap-2">
-                      <span className="h-2 w-2 rounded-full" style={{ background: ["#6366f1", "#a855f7", "#10b981"][i % 3] }} /> {m.name}
-                    </span>
-                    <span className="font-semibold">{m.value}</span>
-                  </div>
-                ))}
-              </div>
-            </>
-          )}
-        </Card>
-      </div>
+export async function loadEvents(): Promise<Event[]> {
+  if (!isSupabaseConfigured) return [];
+  const { data, error } = await supabase.from("events").select("*").order("event_date", { ascending: true });
+  if (error) throw error;
+  return (data || []).map((e: any) => ({
+    id: e.id,
+    title: e.title,
+    description: e.description,
+    date: e.event_date,
+    location: e.venue,
+    capacity: e.capacity,
+    registered: e.registered,
+    attended: e.attended,
+    status: e.status,
+    feedback: [],
+    budget: Number(e.budget),
+    expense: Number(e.expense),
+    income: Number(e.income),
+  }));
+}
 
-      <Card className="p-6">
-        <h3 className="font-semibold mb-4">Manual Attendance Assignment</h3>
-        <div className="flex flex-wrap gap-4 mb-6">
-          <div className="flex-1 min-w-[200px]">
-            <Label>
-              <Calendar className="h-3 w-3 inline mr-1" />
-              Event / Session
-            </Label>
-            <Select value={eventId} onChange={(e) => setEventId(e.target.value)}>
-              <option value="">— General Attendance —</option>
-              {events.map((e) => (
-                <option key={e.id} value={e.id}>
-                  {e.title}
-                </option>
-              ))}
-            </Select>
-          </div>
-          <div className="w-48">
-            <Label>Date</Label>
-            <Input type="date" value={attendanceDate} onChange={(e) => setAttendanceDate(e.target.value)} />
-          </div>
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
-          {users.map((u) => (
-            <div key={u.id} className="flex items-center gap-3 p-3 rounded-xl bg-slate-100/40 dark:bg-white/5">
-              <Avatar name={u.name} gradient={u.avatar} size={36} />
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold truncate">{u.name}</p>
-                <p className="text-xs text-slate-500">{u.memberId}</p>
-              </div>
-              <div className="flex gap-1">
-                {(["Present", "Late", "Absent", "Excused"] as const).map((s) => (
-                  <button
-                    key={s}
-                    title={s}
-                    onClick={() => handleManualMark(u.id, s)}
-                    className={`h-8 w-8 rounded-lg flex items-center justify-center ${
-                      s === "Present"
-                        ? "bg-emerald-500/15 text-emerald-600 hover:bg-emerald-500/25"
-                        : s === "Late"
-                        ? "bg-amber-500/15 text-amber-600 hover:bg-amber-500/25"
-                        : s === "Absent"
-                        ? "bg-rose-500/15 text-rose-600 hover:bg-rose-500/25"
-                        : "bg-slate-500/15 text-slate-600 hover:bg-slate-500/25"
-                    }`}
-                  >
-                    {s === "Present" ? <CheckCheck className="h-4 w-4" /> : s === "Late" ? <Clock className="h-4 w-4" /> : s === "Absent" ? <XCircle className="h-4 w-4" /> : <AlertTriangle className="h-4 w-4" />}
-                  </button>
-                ))}
-              </div>
-            </div>
-          ))}
-        </div>
-      </Card>
+/* ===================== FINANCE (direct CRUD) ===================== */
+function financeRow(f: FinanceEntry) {
+  return {
+    type: f.type,
+    amount: f.amount,
+    description: f.description,
+    category: f.category,
+    event_id: isUuid(f.eventId) ? f.eventId : null,
+    entry_date: f.date,
+    reference: f.reference || null,
+  };
+}
+export async function insertFinance(f: FinanceEntry): Promise<string | null> {
+  if (!isSupabaseConfigured) return null;
+  const { data, error } = await supabase.from("finance_entries").insert(financeRow(f)).select("id").maybeSingle();
+  if (error) throw error;
+  return data?.id || null;
+}
+export async function updateFinanceRow(id: string, f: FinanceEntry) {
+  if (!isSupabaseConfigured || !isUuid(id)) return;
+  const { error } = await supabase.from("finance_entries").update(financeRow(f)).eq("id", id);
+  if (error) throw error;
+}
+export async function deleteFinanceRow(id: string) {
+  if (!isSupabaseConfigured || !isUuid(id)) return;
+  const { error } = await supabase.from("finance_entries").delete().eq("id", id);
+  if (error) throw error;
+}
+export async function loadFinance(): Promise<FinanceEntry[]> {
+  if (!isSupabaseConfigured) return [];
+  const { data, error } = await supabase.from("finance_entries").select("*").order("entry_date", { ascending: false });
+  if (error) throw error;
+  return (data || []).map((f: any) => ({
+    id: f.id,
+    type: f.type,
+    amount: Number(f.amount),
+    description: f.description,
+    category: f.category,
+    eventId: f.event_id || undefined,
+    date: f.entry_date,
+    reference: f.reference || undefined,
+  }));
+}
 
-      <Modal open={qrOpen} onClose={() => setQrOpen(false)} title="QR Attendance Scanner">
-        <div className="space-y-4">
-          <div className="text-center py-4">
-            <div className="relative mx-auto h-56 w-56 rounded-3xl bg-slate-100 dark:bg-white/5 ring-2 ring-indigo-500/30 flex items-center justify-center overflow-hidden">
-              <ScanLine className="h-20 w-20 text-indigo-500" />
-            </div>
-            <p className="mt-6 text-sm text-slate-500">Scan QR or paste Member ID/Username</p>
-            <Input className="mt-2" value={scanInput} onChange={(e) => setScanInput(e.target.value)} placeholder="Enter Member ID or Username" />
-            <Button className="mt-4 w-full" onClick={handleQrScan}>
-              Mark Present
-            </Button>
-            {scanned && (
-              <div className={`mt-4 rounded-xl px-4 py-2 inline-block font-semibold ${scanned.duplicate ? "bg-amber-500/15 text-amber-700" : "bg-emerald-500/15 text-emerald-700"}`}>
-                {scanned.error || (scanned.duplicate ? "⚠ Already marked — " : "✓ Recorded — ")}
-                {scanned.name}
-              </div>
-            )}
-          </div>
-        </div>
-      </Modal>
-    </div>
-  );
+/* ===================== ATTENDANCE (direct CRUD) ===================== */
+export async function upsertAttendanceRecord(rec: AttendanceRecord) {
+  if (!isSupabaseConfigured) return;
+  const row = {
+    member_id: rec.userId,
+    event_id: isUuid(rec.eventId) ? rec.eventId : null,
+    method: rec.method,
+    status: rec.status,
+    attendance_date: rec.date.slice(0, 10),
+    created_at: rec.date,
+  };
+  // update existing for same member/date/event; else insert
+  const { data: existing } = await supabase
+    .from("attendance")
+    .select("id")
+    .eq("member_id", rec.userId)
+    .eq("attendance_date", rec.date.slice(0, 10))
+    .eq("event_id", isUuid(rec.eventId) ? rec.eventId : null)
+    .maybeSingle();
+  if (existing?.id) {
+    const { error } = await supabase.from("attendance").update(row).eq("id", existing.id);
+    if (error) throw error;
+  } else {
+    const { error } = await supabase.from("attendance").insert(row);
+    if (error) throw error;
+  }
+}
+
+export async function loadAttendance(): Promise<AttendanceRecord[]> {
+  if (!isSupabaseConfigured) return [];
+  const { data, error } = await supabase.from("attendance").select("*").order("created_at", { ascending: false });
+  if (error) throw error;
+  return (data || []).map((a: any) => ({
+    id: a.id,
+    userId: a.member_id,
+    eventId: a.event_id || undefined,
+    method: a.method,
+    status: a.status,
+    date: a.created_at,
+  }));
+}
+
+function isUuidLoose(id?: string) {
+  return !!id && /^[0-9a-f-]{32,36}$/i.test(id);
+}
+
+export async function insertChatMessage(msg: { fromId: string; toId?: string; team?: string; body: string }) {
+  if (!isSupabaseConfigured) return;
+  const row: any = {
+    from_member_id: isUuidLoose(msg.fromId) ? msg.fromId : null,
+    to_member_id: msg.toId && isUuidLoose(msg.toId) ? msg.toId : null,
+    team: msg.team || null,
+    body: msg.body,
+  };
+  if (!row.from_member_id) {
+    // Resolve sender member row by current session if id is not a uuid.
+    const { data } = await supabase.auth.getUser();
+    const email = data.user?.email;
+    if (email) {
+      const { data: m } = await supabase.from("members").select("id").eq("email", email).maybeSingle();
+      row.from_member_id = m?.id || null;
+    }
+  }
+  const { error } = await supabase.from("chat").insert(row);
+  if (error) throw error;
+}
+
+export async function deleteMemberRow(id: string) {
+  if (!isSupabaseConfigured) return;
+  const { error } = await supabase.from("members").delete().eq("id", id);
+  if (error) throw error;
+}
+
+export async function deleteChatMessage(id: string) {
+  if (!isSupabaseConfigured) return;
+  const { error } = await supabase.from("chat").delete().eq("id", id);
+  if (error) throw error;
+}
+
+export async function clearChatThread(opts: { team?: string; a?: string; b?: string }) {
+  if (!isSupabaseConfigured) return;
+  if (opts.team) {
+    const { error } = await supabase.from("chat").delete().eq("team", opts.team);
+    if (error) throw error;
+    return;
+  }
+  if (opts.a && opts.b) {
+    // delete both directions of a DM thread
+    await supabase.from("chat").delete().eq("from_member_id", opts.a).eq("to_member_id", opts.b);
+    await supabase.from("chat").delete().eq("from_member_id", opts.b).eq("to_member_id", opts.a);
+  }
+}
+
+export async function loadChats(): Promise<ChatMessage[]> {
+  if (!isSupabaseConfigured) return [];
+  const { data, error } = await supabase.from("chat").select("*").order("created_at", { ascending: true });
+  if (error) throw error;
+  return (data || []).map((c: any) => ({
+    id: c.id,
+    fromId: c.from_member_id,
+    toId: c.to_member_id || undefined,
+    team: c.team || undefined,
+    body: c.body,
+    read: c.read,
+    createdAt: c.created_at,
+  }));
+}
+
+export async function loadMembers(): Promise<User[]> {
+  if (!isSupabaseConfigured) return [];
+  const [{ data: members }, { data: departments }] = await Promise.all([
+    supabase.from("members").select("*"),
+    supabase.from("departments").select("id,name"),
+  ]);
+  return (members || []).map((m: any) => ({
+    id: m.id,
+    username: m.username,
+    memberId: m.member_id,
+    specialNumber: m.special_number,
+    name: m.name,
+    email: m.email,
+    photoUrl: m.profile_photo_url || undefined,
+    phone: m.phone || "",
+    role: m.role,
+    position: m.position,
+    department: (departments || []).find((d: any) => d.id === m.department_id)?.name || "General",
+    skills: [],
+    joinDate: m.join_date,
+    avatar: "teal",
+    points: m.points,
+    attendance: Number(m.attendance),
+    performanceScore: Number(m.performance_score),
+    status: m.status,
+    certificates: [],
+    activity: [],
+    createdBy: m.created_by || undefined,
+    createdAt: m.created_at,
+    lastLogin: m.last_login || undefined,
+  }));
+}
+
+function mapMemberRow(m: any, departments: any[]): User {
+  return {
+    id: m.id,
+    username: m.username,
+    memberId: m.member_id,
+    specialNumber: m.special_number,
+    name: m.name,
+    email: m.email,
+    photoUrl: m.profile_photo_url || undefined,
+    phone: m.phone || "",
+    role: m.role,
+    position: m.position,
+    department: (departments || []).find((d: any) => d.id === m.department_id)?.name || "General",
+    skills: [],
+    joinDate: m.join_date,
+    avatar: "teal",
+    points: m.points,
+    attendance: Number(m.attendance),
+    performanceScore: Number(m.performance_score),
+    status: m.status,
+    certificates: [],
+    activity: [],
+    createdBy: m.created_by || undefined,
+    createdAt: m.created_at,
+    lastLogin: m.last_login || undefined,
+  };
+}
+
+// Guarantees a row exists in `members` for the given auth user, and returns the
+// canonical User (with the real members.id). This keeps currentUser.id aligned
+// with members.id so direct messages and member lists work correctly.
+export async function ensureMember(opts: {
+  email: string;
+  name?: string;
+  username?: string;
+  role?: string;
+  specialNumber?: string;
+}): Promise<User | null> {
+  if (!isSupabaseConfigured) return null;
+  const { data: departments } = await supabase.from("departments").select("id,name");
+
+  // Already exists?
+  const { data: existing } = await supabase.from("members").select("*").eq("email", opts.email).maybeSingle();
+  if (existing) {
+    await supabase.from("members").update({ last_login: new Date().toISOString() }).eq("id", existing.id);
+    return mapMemberRow({ ...existing, last_login: new Date().toISOString() }, departments || []);
+  }
+
+  // Generate a unique member_id / special_number based on current count.
+  const { count } = await supabase.from("members").select("*", { count: "exact", head: true });
+  const next = (count || 0) + 1;
+  const suffix = Math.random().toString(36).slice(2, 5).toUpperCase();
+  const row = {
+    username: opts.username || opts.email.split("@")[0],
+    member_id: `SOC-2026-${String(next).padStart(4, "0")}`,
+    special_number: opts.specialNumber || `SM_${26200 + next}_${suffix}`,
+    name: opts.name || opts.email.split("@")[0],
+    email: opts.email,
+    role: opts.role || "General Member",
+    position: "Member",
+    status: "Active",
+    attendance: 0,
+    points: 0,
+    performance_score: 0,
+    join_date: new Date().toISOString().slice(0, 10),
+    created_at: new Date().toISOString(),
+    last_login: new Date().toISOString(),
+  };
+  const { data: inserted, error } = await supabase.from("members").insert(row).select("*").maybeSingle();
+  if (error) {
+    console.error("ensureMember insert failed", error);
+    return null;
+  }
+  return inserted ? mapMemberRow(inserted, departments || []) : null;
+}
+
+export async function uploadToSupabaseStorage(path: string, file: File) {
+  if (!isSupabaseConfigured) throw new Error("Supabase is not configured");
+  const { error } = await supabase.storage.from(SUPABASE_STORAGE_BUCKET).upload(path, file, {
+    upsert: true,
+    contentType: file.type,
+  });
+  if (error) throw error;
+  const { data } = supabase.storage.from(SUPABASE_STORAGE_BUCKET).getPublicUrl(path);
+  return data.publicUrl;
+}
+
+export async function callSupabaseAdmin(action: string, payload: Record<string, unknown>) {
+  const response = await fetch("/api/supabase/admin-user", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action, ...payload }),
+  });
+  const text = await response.text();
+  const json = text ? JSON.parse(text) : {};
+  if (!response.ok) throw new Error(json.error || "Supabase admin function failed");
+  return json;
+}
+
+export async function updateMemberRow(id: string, member: Partial<User>, depId: string | null) {
+  if (!isSupabaseConfigured || !isUuid(id)) return;
+  const { error } = await supabase.from("members").update({
+    username: member.username,
+    name: member.name,
+    email: member.email,
+    phone: member.phone,
+    role: member.role,
+    department_id: depId,
+    position: member.position,
+    status: member.status,
+    profile_photo_url: member.photoUrl,
+    attendance: member.attendance,
+    points: member.points,
+    performance_score: member.performanceScore,
+  }).eq("id", id);
+  if (error) throw error;
 }

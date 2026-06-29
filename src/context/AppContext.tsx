@@ -1,5 +1,3 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
-import type { ReactNode } from "react";
 import type {
   ActivityLog,
   Application,
@@ -11,150 +9,12 @@ import type {
   MessageTemplate,
   NotificationItem,
   OutreachContact,
-  Role,
   Task,
   User,
 } from "../types";
-import {
-  seedActivityLogs,
-  seedApplications,
-  seedAttendance,
-  seedEvents,
-  seedFinance,
-  seedNotifications,
-  seedOutreach,
-  seedTasks,
-  seedTemplates,
-  seedUsers,
-} from "../data/seed";
-import {
-  callSupabaseAdmin,
-  clearChatThread,
-  deleteChatMessage,
-  deleteEventRow,
-  deleteFinanceRow,
-  deleteMemberRow,
-  ensureMember,
-  insertChatMessage,
-  insertEvent,
-  insertFinance,
-  loadChats,
-  loadErpState,
-  loadEvents,
-  loadFinance,
-  loadMembers,
-  saveErpState,
-  updateEventRow,
-  updateFinanceRow,
-  updateMemberRow,
-} from "../lib/supabaseStore";
-import { isSupabaseConfigured, supabase, supabaseConfigMessage } from "../lib/supabase";
-import { isSuperAdminEmail } from "../lib/access";
+import { isSupabaseConfigured, supabase, SUPABASE_STORAGE_BUCKET } from "./supabase";
 
-interface AppState {
-  users: User[];
-  tasks: Task[];
-  events: Event[];
-  finance: FinanceEntry[];
-  outreach: OutreachContact[];
-  applications: Application[];
-  templates: MessageTemplate[];
-  notifications: NotificationItem[];
-  attendance: AttendanceRecord[];
-  activityLogs: ActivityLog[];
-  departments: Department[];
-  chats: ChatMessage[];
-  currentUser: User | null;
-  theme: "light" | "dark";
-  setTheme: (t: "light" | "dark") => void;
-  toggleTheme: () => void;
-  login: (email: string, password: string) => Promise<{ ok: boolean; error?: string }>;
-  logout: () => void;
-  register: (data: Partial<User> & { password: string }) => Promise<{ ok: boolean; error?: string }>;
-  forgotPassword: (email: string) => { ok: boolean; token?: string; error?: string };
-  resetPassword: (token: string, newPassword: string) => { ok: boolean; error?: string };
-  changePassword: (oldPw: string, newPw: string) => Promise<{ ok: boolean; error?: string }>;
-
-  addUser: (u: Omit<User, "id" | "memberId">) => void;
-  updateUser: (id: string, patch: Partial<User>) => void;
-  deleteUser: (id: string) => void;
-  suspendUser: (id: string) => void;
-  resetUserPassword: (id: string, newPassword: string) => void;
-
-  addDepartment: (name: string, description: string, leadId?: string) => void;
-  updateDepartment: (id: string, patch: Partial<Department>) => void;
-  deleteDepartment: (id: string) => void;
-  sendChat: (body: string, toId?: string, team?: string) => void;
-  deleteChat: (id: string) => void;
-  clearChat: (opts: { team?: string; otherId?: string }) => void;
-
-  addTask: (t: Omit<Task, "id" | "createdAt" | "status">) => void;
-  updateTask: (id: string, patch: Partial<Task>) => void;
-  deleteTask: (id: string) => void;
-
-  addEvent: (e: Omit<Event, "id">) => void;
-  updateEvent: (id: string, patch: Partial<Event>) => void;
-  deleteEvent: (id: string) => void;
-  duplicateEvent: (id: string) => void;
-  archiveEvent: (id: string) => void;
-
-  addFinance: (f: Omit<FinanceEntry, "id">) => void;
-  updateFinance: (id: string, patch: Partial<FinanceEntry>) => void;
-  deleteFinance: (id: string) => void;
-
-  addOutreach: (o: Omit<OutreachContact, "id">) => void;
-  updateOutreach: (id: string, patch: Partial<OutreachContact>) => void;
-  deleteOutreach: (id: string) => void;
-
-  addApplication: (a: Omit<Application, "id">) => void;
-  updateApplication: (id: string, patch: Partial<Application>) => void;
-
-  addNotification: (n: Omit<NotificationItem, "id" | "createdAt" | "read">) => void;
-  markAllRead: () => void;
-
-  markAttendance: (userId: string, method: AttendanceRecord["method"], status: AttendanceRecord["status"], eventId?: string, date?: string) => { ok: boolean; duplicate?: boolean };
-
-  logActivity: (action: string, category: ActivityLog["category"], target?: string) => void;
-  hasPermission: (perm: Permission) => boolean;
-  isSuperAdmin: () => boolean;
-}
-
-export type Permission =
-  | "manage_members"
-  | "manage_tasks"
-  | "manage_finance"
-  | "manage_outreach"
-  | "manage_events"
-  | "manage_hr"
-  | "send_broadcast"
-  | "view_analytics"
-  | "ai_command"
-  | "manage_roles"
-  | "manage_settings"
-  | "view_logs";
-
-const ALL: Permission[] = [
-  "manage_members", "manage_tasks", "manage_finance", "manage_outreach",
-  "manage_events", "manage_hr", "send_broadcast", "view_analytics",
-  "ai_command", "manage_roles", "manage_settings", "view_logs",
-];
-
-const rolePermissions: Record<Role, Permission[]> = {
-  "Super Admin": ALL,
-  Founder: ALL,
-  "Co-Founder": ["manage_members", "manage_tasks", "manage_finance", "manage_outreach", "manage_events", "manage_hr", "send_broadcast", "view_analytics", "ai_command", "view_logs"],
-  Executive: ["manage_tasks", "manage_events", "view_analytics", "send_broadcast"],
-  "HR Manager": ["manage_members", "manage_hr", "view_analytics", "send_broadcast"],
-  "Department Lead": ["manage_tasks", "view_analytics"],
-  "Finance Manager": ["manage_finance", "view_analytics"],
-  "Outreach Manager": ["manage_outreach", "view_analytics", "send_broadcast"],
-  "Event Manager": ["manage_events", "view_analytics"],
-  "General Member": [],
-};
-
-const Ctx = createContext<AppState | null>(null);
-
-interface PersistShape {
+export interface ErpStateSnapshot {
   users: User[];
   tasks: Task[];
   events: Event[];
@@ -169,662 +29,503 @@ interface PersistShape {
   chats: ChatMessage[];
 }
 
-const defaultDepartments: Department[] = [
-  "Leadership", "Human Resources", "Outreach", "Media", "Women's Wing", "Decor", "Design", "Administration", "Projects", "Events", "Technical", "Operations", "Finance"
-].map((name, i) => ({ id: `d${i + 1}`, name, description: `${name} department`, createdAt: new Date().toISOString() }));
+function isUuid(id?: string) {
+  return !!id && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id);
+}
 
-function defaultState(): PersistShape {
+export async function loadErpState(): Promise<ErpStateSnapshot | null> {
+  if (!isSupabaseConfigured) return null;
+  const [members, departments, events, finance, outreach, applications, notifications, attendance, audit, chat, tasks, assignees, submissions] = await Promise.all([
+    supabase.from("members").select("*"),
+    supabase.from("departments").select("*"),
+    supabase.from("events").select("*"),
+    supabase.from("finance_entries").select("*"),
+    supabase.from("outreach").select("*"),
+    supabase.from("hr_applications").select("*"),
+    supabase.from("notifications").select("*"),
+    supabase.from("attendance").select("*"),
+    supabase.from("audit_logs").select("*"),
+    supabase.from("chat").select("*"),
+    supabase.from("tasks").select("*"),
+    supabase.from("task_assignees").select("*"),
+    supabase.from("task_submissions").select("*")
+  ]);
+  const errors = [members, departments, events, finance, outreach, applications, notifications, attendance, audit, chat, tasks, assignees, submissions].map((r) => r.error).filter(Boolean);
+  if (errors[0]) throw errors[0];
+
+  const users: User[] = (members.data || []).map((m: any) => ({
+    id: m.id,
+    username: m.username,
+    memberId: m.member_id,
+    specialNumber: m.special_number,
+    name: m.name,
+    email: m.email,
+    photoUrl: m.profile_photo_url || undefined,
+    phone: m.phone || "",
+    role: m.role,
+    position: m.position,
+    department: (departments.data || []).find((d: any) => d.id === m.department_id)?.name || "General",
+    skills: [],
+    joinDate: m.join_date,
+    avatar: "teal",
+    points: m.points,
+    attendance: Number(m.attendance),
+    performanceScore: Number(m.performance_score),
+    status: m.status,
+    certificates: [],
+    activity: [],
+    createdBy: m.created_by || undefined,
+    createdAt: m.created_at,
+    lastLogin: m.last_login || undefined,
+  }));
+  const tasksMapped: Task[] = (tasks.data || []).map((t: any) => {
+    const sub = (submissions.data || []).find((s: any) => s.task_id === t.id);
+    return {
+      id: t.id,
+      title: t.title,
+      description: t.description,
+      assignees: (assignees.data || []).filter((a: any) => a.task_id === t.id).map((a: any) => a.member_id),
+      createdBy: t.created_by || "",
+      createdAt: t.created_at,
+      deadline: t.deadline,
+      priority: t.priority,
+      status: t.status,
+      remarks: t.remarks || undefined,
+      reviewNotes: t.review_notes || undefined,
+      approvedBy: t.approved_by || undefined,
+      submission: sub ? { fileName: sub.file_name, fileData: sub.file_url, fileType: sub.file_type, notes: sub.comments || "", submittedAt: sub.submitted_at } : undefined,
+    };
+  });
   return {
-    users: seedUsers,
-    tasks: seedTasks,
-    events: seedEvents,
-    finance: seedFinance,
-    outreach: seedOutreach,
-    applications: seedApplications,
-    templates: seedTemplates,
-    notifications: seedNotifications,
-    attendance: seedAttendance,
-    activityLogs: seedActivityLogs,
-    departments: defaultDepartments,
-    chats: [],
+    users,
+    departments: (departments.data || []).map((d: any) => ({ id: d.id, name: d.name, description: d.description, leadId: d.lead_id || undefined, createdAt: d.created_at })),
+    events: (events.data || []).map((e: any) => ({ id: e.id, title: e.title, description: e.description, type: e.type || "event", date: e.event_date, location: e.venue, capacity: e.capacity, registered: e.registered, attended: e.attended, status: e.status, feedback: [], budget: Number(e.budget), expense: Number(e.expense), income: Number(e.income) })),
+    finance: (finance.data || []).map((f: any) => ({ id: f.id, type: f.type, amount: Number(f.amount), description: f.description, category: f.category, eventId: f.event_id || undefined, date: f.entry_date })),
+    outreach: (outreach.data || []).map((o: any) => ({ id: o.id, name: o.contact_name, organization: o.organization, type: o.type, email: o.email || "", phone: o.phone || "", stage: o.stage, notes: o.notes, lastContact: o.last_contact || o.created_at })),
+    applications: (applications.data || []).map((a: any) => ({ id: a.id, name: a.name, email: a.email, phone: a.phone || "", position: a.position, stage: a.stage, appliedAt: a.applied_at, notes: a.notes, score: a.score || undefined })),
+    notifications: (notifications.data || []).map((n: any) => ({ id: n.id, userId: n.member_id || undefined, title: n.title, body: n.body, channel: n.channel, type: n.type, read: n.read, createdAt: n.created_at })),
+    attendance: (attendance.data || []).map((a: any) => ({ id: a.id, userId: a.member_id, eventId: a.event_id || undefined, method: a.method, status: a.status, date: a.created_at })),
+    activityLogs: (audit.data || []).map((l: any) => ({ id: l.id, actorId: l.actor_id || "", actorName: l.actor_name, action: l.action, target: l.target || undefined, category: l.category, createdAt: l.created_at })),
+    chats: (chat.data || []).map((c: any) => ({ id: c.id, fromId: c.from_member_id, toId: c.to_member_id || undefined, team: c.team || undefined, body: c.body, read: c.read, createdAt: c.created_at })),
+    tasks: tasksMapped,
+    templates: [],
   };
 }
 
-const resetTokens = new Map<string, string>();
-
-export function AppProvider({ children }: { children: ReactNode }) {
-  const [state, setState] = useState<PersistShape>(defaultState);
-  const [currentUser, setCurrentUser] = useState<User | null>(null);
-  const [theme, setThemeState] = useState<"light" | "dark">("dark");
-  const [hydrated, setHydrated] = useState(false);
-
-  useEffect(() => {
-    let active = true;
-    (async () => {
-      const stored = await loadErpState().catch(() => null);
-      const next = stored || defaultState();
-      const { data: authData } = isSupabaseConfigured ? await supabase.auth.getSession() : { data: { session: null } } as any;
-      if (!active) return;
-      setState(next);
-      const email = authData.session?.user?.email;
-      if (email) setCurrentUser(next.users.find((u: User) => u.email.toLowerCase() === email.toLowerCase()) || null);
-      setHydrated(true);
-    })();
-    return () => {
-      active = false;
-    };
-  }, []);
-
-  useEffect(() => {
-    if (hydrated) saveErpState(state).catch((error) => console.error("Supabase save failed", error));
-  }, [state, hydrated]);
-
-  // Live sync: every few seconds pull latest members + chats from Supabase so new
-  // accounts and messages appear for everyone without a manual refresh.
-  useEffect(() => {
-    if (!hydrated || !isSupabaseConfigured || !currentUser) return;
-    let active = true;
-    const tick = async () => {
-      try {
-        const [members, chats, events, finance] = await Promise.all([loadMembers(), loadChats(), loadEvents(), loadFinance()]);
-        if (!active) return;
-        setState((s) => ({
-          ...s,
-          users: members.length ? members : s.users,
-          chats,
-          events,
-          finance,
-        }));
-      } catch (error) {
-        console.error("Live sync failed", error);
-      }
-    };
-    const interval = setInterval(tick, 6000);
-    tick();
-    return () => {
-      active = false;
-      clearInterval(interval);
-    };
-  }, [hydrated, currentUser]);
-
-  useEffect(() => {
-    document.documentElement.classList.toggle("dark", theme === "dark");
-  }, [theme]);
-
-  const setTheme = useCallback((t: "light" | "dark") => setThemeState(t), []);
-  const toggleTheme = useCallback(() => setThemeState((t) => (t === "dark" ? "light" : "dark")), []);
-
-  const _log = useCallback((actor: User | null, action: string, category: ActivityLog["category"], target?: string) => {
-    if (!actor) return;
-    const entry: ActivityLog = {
-      id: "log" + Date.now() + Math.random(),
-      actorId: actor.id,
-      actorName: actor.name,
-      action,
-      category,
-      target,
-      createdAt: new Date().toISOString(),
-    };
-    setState((s) => ({ ...s, activityLogs: [entry, ...s.activityLogs].slice(0, 500) }));
-  }, []);
-
-  const logActivity = useCallback(
-    (action: string, category: ActivityLog["category"], target?: string) => _log(currentUser, action, category, target),
-    [currentUser, _log]
-  );
-
-  // === Auth ===
-  const login = useCallback(
-    async (email: string, password: string) => {
-      if (!isSupabaseConfigured) return { ok: false, error: supabaseConfigMessage };
-
-      // Allow login by username OR email. Resolve username -> email from the members list if possible.
-      const local = state.users.find(
-        (x) => x.email.toLowerCase() === email.toLowerCase() || x.username.toLowerCase() === email.toLowerCase()
-      );
-      const loginEmail = local?.email || email;
-
-      if (local && local.status === "Suspended") {
-        return { ok: false, error: "This account is suspended. Contact the Super Admin." };
-      }
-
-      // Authenticate directly against Supabase Auth (source of truth).
-      const { data, error } = await supabase.auth.signInWithPassword({ email: loginEmail, password });
-      if (error) return { ok: false, error: `Supabase Auth failed: ${error.message}` };
-
-      const authEmail = data.user?.email || loginEmail;
-      // ONLY the hardcoded Super Admin email can be Super Admin.
-      const isSuper = isSuperAdminEmail(authEmail);
-
-      // Ensure a canonical row exists in the Supabase `members` table and use its real id.
-      let profile = await ensureMember({
-        email: authEmail,
-        name: local?.name || authEmail.split("@")[0],
-        username: local?.username || authEmail.split("@")[0],
-        role: isSuper ? "Super Admin" : (local?.role && local.role !== "Super Admin" ? local.role : "General Member"),
-        specialNumber: local?.specialNumber,
-      });
-
-      if (!profile) {
-        return { ok: false, error: "Login succeeded but member profile could not be created in Supabase. Check RLS policies on the members table." };
-      }
-
-      // Enforce the single Super Admin rule.
-      if (isSuper && profile.role !== "Super Admin") {
-        updateUser(profile.id, { role: "Super Admin" });
-        profile = { ...profile, role: "Super Admin" };
-      } else if (!isSuper && profile.role === "Super Admin") {
-        // Someone other than Zuhair must never keep Super Admin.
-        updateUser(profile.id, { role: "General Member" });
-        profile = { ...profile, role: "General Member" };
-      }
-
-      // Refresh full member list so this user (and Super Admin) sees everyone.
-      const members = await loadMembers();
-      setState((s) => ({ ...s, users: members.length ? members : [...s.users, profile] }));
-      setCurrentUser(profile);
-      _log(profile, `Signed in`, "auth");
-      return { ok: true };
-    },
-    [state.users, _log]
-  );
-
-  const logout = useCallback(() => {
-    if (currentUser) _log(currentUser, "Signed out", "auth");
-    if (isSupabaseConfigured) supabase.auth.signOut();
-    setCurrentUser(null);
-  }, [currentUser, _log]);
-
-  const register = useCallback(
-    async (data: Partial<User> & { password: string }) => {
-      if (!data.email || !data.name) return { ok: false, error: "Missing fields." };
-      if (state.users.some((u) => u.email.toLowerCase() === data.email!.toLowerCase()))
-        return { ok: false, error: "Email already registered." };
-      const id = "u" + (state.users.length + 1) + "-" + Date.now();
-      const num = state.users.length + 1;
-      const newUser: User = {
-        id,
-        username: data.username || data.email.split("@")[0],
-        memberId: `SOC-2026-${String(num).padStart(4, "0")}`,
-        specialNumber: data.specialNumber || `SM_${26200 + num}`,
-        name: data.name,
-        email: data.email,
-        createdBy: "self-registration",
-        createdAt: new Date().toISOString(),
-        passwordResetHistory: [],
-        role: data.role || "General Member",
-        position: data.position || "Member",
-        department: data.department || "General",
-        skills: data.skills || [],
-        joinDate: new Date().toISOString(),
-        // INITIAL RULE
-        points: 0,
-        attendance: 0,
-        performanceScore: 0,
-        status: "Active",
-        certificates: [],
-        activity: [{ date: new Date().toISOString(), action: "Joined Sociapi Nexus" }],
-        avatar: "teal",
-        phone: data.phone,
-      };
-      if (!isSupabaseConfigured) return { ok: false, error: "Supabase is not configured." };
-
-      // Client-side sign up works both locally and on Vercel (no serverless function needed).
-      const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
-        email: newUser.email,
-        password: data.password,
-        options: {
-          data: { username: newUser.username, role: newUser.role, memberId: newUser.memberId },
-        },
-      });
-      if (signUpError) return { ok: false, error: signUpError.message };
-
-      // Create the canonical members row (so Super Admin sees them too).
-      const profile = await ensureMember({
-        email: newUser.email,
-        name: newUser.name,
-        username: newUser.username,
-        role: newUser.role,
-        specialNumber: newUser.specialNumber,
-      });
-
-      // If Supabase has "Confirm email" ON, there is no active session yet.
-      if (!signUpData.session) {
-        const members = await loadMembers();
-        setState((s) => ({ ...s, users: members.length ? members : [...s.users, newUser] }));
-        return {
-          ok: false,
-          error: "Account created, but email confirmation is required. Confirm the email in Supabase (or disable 'Confirm email' under Authentication → Providers) and then sign in.",
-        };
-      }
-
-      const members = await loadMembers();
-      setState((s) => ({ ...s, users: members.length ? members : [...s.users, newUser] }));
-      setCurrentUser(profile || newUser);
-      _log(profile || newUser, `Registered new account`, "auth");
-      return { ok: true };
-    },
-    [state.users, _log]
-  );
-
-  const forgotPassword = useCallback(
-    (email: string) => {
-      const u = state.users.find((x) => x.email.toLowerCase() === email.toLowerCase());
-      if (!u) return { ok: false, error: "No account found for that email." };
-      const token = Math.random().toString(36).slice(2, 10).toUpperCase();
-      resetTokens.set(token, u.email);
-      return { ok: true, token };
-    },
-    [state.users]
-  );
-
-  const resetPassword = useCallback((token: string, newPassword: string) => {
-    void newPassword;
-    const email = resetTokens.get(token);
-    if (!email) return { ok: false, error: "Invalid or expired token." };
-    setState((s) => ({
-      ...s,
-      users: s.users,
+// NOTE: events & finance are NOT bulk-saved here anymore (that caused duplicate
+// rows on every state change). They use direct insert/update/delete below.
+export async function saveErpState(data: ErpStateSnapshot): Promise<void> {
+  if (!isSupabaseConfigured) return;
+  // Only members are upserted in bulk, and email is unique so no duplicates can occur.
+  const { data: dbDeps } = await supabase.from("departments").select("id,name");
+  const depId = (name: string) => (dbDeps || []).find((d: any) => d.name === name)?.id || null;
+  const members = data.users
+    .filter((u) => isUuid(u.id))
+    .map((u) => ({
+      id: u.id,
+      username: u.username,
+      member_id: u.memberId,
+      special_number: u.specialNumber,
+      name: u.name,
+      email: u.email,
+      phone: u.phone || null,
+      profile_photo_url: u.photoUrl || null,
+      role: u.role,
+      department_id: depId(u.department),
+      position: u.position,
+      attendance: u.attendance,
+      points: u.points,
+      performance_score: u.performanceScore,
+      status: u.status,
+      last_login: u.lastLogin || null,
     }));
-    resetTokens.delete(token);
-    return { ok: true };
-  }, []);
+  if (members.length) await supabase.from("members").upsert(members, { onConflict: "id" });
+}
 
-  const changePassword = useCallback(
-    async (oldPw: string, newPw: string) => {
-      if (!currentUser) return { ok: false, error: "Not signed in." };
-      void oldPw;
-      if (!isSupabaseConfigured) return { ok: false, error: "Supabase is not configured." };
-      const { error } = await supabase.auth.updateUser({ password: newPw });
-      if (error) return { ok: false, error: error.message };
-      _log(currentUser, "Changed password", "auth");
-      return { ok: true };
-    },
-    [currentUser, _log]
-  );
-
-  // === CRUD ===
-  const addUser: AppState["addUser"] = (u) =>
-    setState((s) => {
-      const num = s.users.length + 1;
-      const newUser: User = {
-        ...u,
-        id: "u" + Date.now(),
-        username: u.username || u.email.split("@")[0],
-        memberId: `SOC-2026-${String(num).padStart(4, "0")}`,
-        createdBy: currentUser?.id,
-        createdAt: new Date().toISOString(),
-        passwordResetHistory: [],
-        // enforce initial rule for newly added members
-        points: 0,
-        attendance: 0,
-        performanceScore: 0,
-        status: "Active",
-        certificates: u.certificates || [],
-        activity: u.activity?.length ? u.activity : [{ date: new Date().toISOString(), action: "Added to Sociapi Nexus" }],
-      };
-      if (isSupabaseConfigured) {
-        const tempPassword = (u as any).temporaryPassword;
-        if (!tempPassword) {
-          setTimeout(() => {
-            addNotification({
-              title: "Member added without login",
-              body: `${newUser.name} was added, but no temporary password was provided, so no Supabase Auth login was created.`,
-              channel: "In-App",
-              type: "warning",
-            });
-          }, 0);
-        } else {
-          callSupabaseAdmin("create", {
-            email: newUser.email,
-            password: tempPassword,
-            metadata: { username: newUser.username, role: newUser.role, memberId: newUser.memberId },
-          })
-            .then(() => {
-              addNotification({
-                title: "Login created",
-                body: `Supabase Auth login created for ${newUser.email}. They can sign in with the temporary password.`,
-                channel: "In-App",
-                type: "success",
-              });
-            })
-            .catch((error) => {
-              addNotification({
-                title: "Supabase Auth create FAILED",
-                body: `${error instanceof Error ? error.message : "Unknown error"}. Note: the admin function only runs on Vercel deployment, not on local 'npm run dev'.`,
-                channel: "In-App",
-                type: "alert",
-              });
-            });
-        }
-      }
-      _log(currentUser, `Added member ${newUser.name}`, "members", newUser.id);
-      return { ...s, users: [...s.users, newUser] };
-    });
-  const updateUser: AppState["updateUser"] = (id, patch) => {
-    const depId = state.departments.find((d) => d.name === patch.department)?.id || null;
-    setState((s) => ({ ...s, users: s.users.map((u) => (u.id === id ? { ...u, ...patch } : u)) }));
-    if (currentUser?.id === id) setCurrentUser((cu) => (cu ? { ...cu, ...patch } : cu));
-    if (isSupabaseConfigured) updateMemberRow(id, patch, depId).catch((error) => console.error("Member update failed", error));
-    _log(currentUser, `Updated member`, "members", id);
+/* ===================== EVENTS (direct CRUD) ===================== */
+function eventRow(e: Event) {
+  return {
+    title: e.title,
+    description: e.description,
+    type: e.type || "event",
+    event_date: e.date,
+    venue: e.location,
+    capacity: e.capacity,
+    registered: e.registered,
+    attended: e.attended,
+    status: e.status,
+    budget: e.budget,
+    expense: e.expense,
+    income: e.income,
   };
-  const deleteUser: AppState["deleteUser"] = (id) => {
-    const user = state.users.find((u) => u.id === id);
-    if (user?.role === "Super Admin") return; // Super Admin can never be deleted.
-    // Remove from members table immediately so it disappears for everyone.
-    if (isSupabaseConfigured && user) {
-      deleteMemberRow(id).catch((error) => console.error("Member delete failed", error));
-      // Best-effort: also remove the Supabase Auth login (Vercel-only function).
-      callSupabaseAdmin("delete", { email: user.email }).catch(() => {});
+}
+export async function insertEvent(e: Event): Promise<string | null> {
+  if (!isSupabaseConfigured) return null;
+  const { data, error } = await supabase.from("events").insert(eventRow(e)).select("id").maybeSingle();
+  if (error) throw error;
+  return data?.id || null;
+}
+export async function updateEventRow(id: string, e: Event) {
+  if (!isSupabaseConfigured || !isUuid(id)) return;
+  const { error } = await supabase.from("events").update(eventRow(e)).eq("id", id);
+  if (error) throw error;
+}
+export async function deleteEventRow(id: string) {
+  if (!isSupabaseConfigured || !isUuid(id)) return;
+  const { error } = await supabase.from("events").delete().eq("id", id);
+  if (error) throw error;
+}
+
+export async function insertDepartment(name: string, description: string, leadId?: string) {
+  if (!isSupabaseConfigured) return;
+  const { error } = await supabase.from("departments").insert({ name, description, lead_id: isUuid(leadId) ? leadId : null });
+  if (error) throw error;
+}
+
+export async function updateDepartmentRow(id: string, patch: Partial<Department>) {
+  if (!isSupabaseConfigured || !isUuid(id)) return;
+  const { error } = await supabase.from("departments").update({
+    name: patch.name,
+    description: patch.description,
+    lead_id: isUuid(patch.leadId) ? patch.leadId : null,
+    updated_at: new Date().toISOString(),
+  }).eq("id", id);
+  if (error) throw error;
+}
+
+export async function deleteDepartmentRow(id: string) {
+  if (!isSupabaseConfigured || !isUuid(id)) return;
+  const { error } = await supabase.from("departments").delete().eq("id", id);
+  if (error) throw error;
+}
+
+export async function loadDepartments(): Promise<Department[]> {
+  if (!isSupabaseConfigured) return [];
+  const { data, error } = await supabase.from("departments").select("*").order("name", { ascending: true });
+  if (error) throw error;
+  return (data || []).map((d: any) => ({ id: d.id, name: d.name, leadId: d.lead_id || undefined, description: d.description, createdAt: d.created_at }));
+}
+
+export async function loadEvents(): Promise<Event[]> {
+  if (!isSupabaseConfigured) return [];
+  const { data, error } = await supabase.from("events").select("*").order("event_date", { ascending: true });
+  if (error) throw error;
+  return (data || []).map((e: any) => ({
+    id: e.id,
+    title: e.title,
+    description: e.description,
+    date: e.event_date,
+    location: e.venue,
+    capacity: e.capacity,
+    registered: e.registered,
+    attended: e.attended,
+    status: e.status,
+    feedback: [],
+    budget: Number(e.budget),
+    expense: Number(e.expense),
+    income: Number(e.income),
+  }));
+}
+
+/* ===================== FINANCE (direct CRUD) ===================== */
+function financeRow(f: FinanceEntry) {
+  return {
+    type: f.type,
+    amount: f.amount,
+    description: f.description,
+    category: f.category,
+    event_id: isUuid(f.eventId) ? f.eventId : null,
+    entry_date: f.date,
+    reference: f.reference || null,
+  };
+}
+export async function insertFinance(f: FinanceEntry): Promise<string | null> {
+  if (!isSupabaseConfigured) return null;
+  const { data, error } = await supabase.from("finance_entries").insert(financeRow(f)).select("id").maybeSingle();
+  if (error) throw error;
+  return data?.id || null;
+}
+export async function updateFinanceRow(id: string, f: FinanceEntry) {
+  if (!isSupabaseConfigured || !isUuid(id)) return;
+  const { error } = await supabase.from("finance_entries").update(financeRow(f)).eq("id", id);
+  if (error) throw error;
+}
+export async function deleteFinanceRow(id: string) {
+  if (!isSupabaseConfigured || !isUuid(id)) return;
+  const { error } = await supabase.from("finance_entries").delete().eq("id", id);
+  if (error) throw error;
+}
+export async function loadFinance(): Promise<FinanceEntry[]> {
+  if (!isSupabaseConfigured) return [];
+  const { data, error } = await supabase.from("finance_entries").select("*").order("entry_date", { ascending: false });
+  if (error) throw error;
+  return (data || []).map((f: any) => ({
+    id: f.id,
+    type: f.type,
+    amount: Number(f.amount),
+    description: f.description,
+    category: f.category,
+    eventId: f.event_id || undefined,
+    date: f.entry_date,
+    reference: f.reference || undefined,
+  }));
+}
+
+/* ===================== ATTENDANCE (direct CRUD) ===================== */
+export async function upsertAttendanceRecord(rec: AttendanceRecord) {
+  if (!isSupabaseConfigured) return;
+  const row = {
+    member_id: rec.userId,
+    event_id: isUuid(rec.eventId) ? rec.eventId : null,
+    method: rec.method,
+    status: rec.status,
+    attendance_date: rec.date.slice(0, 10),
+    created_at: rec.date,
+  };
+  // update existing for same member/date/event; else insert
+  const { data: existing } = await supabase
+    .from("attendance")
+    .select("id")
+    .eq("member_id", rec.userId)
+    .eq("attendance_date", rec.date.slice(0, 10))
+    .eq("event_id", isUuid(rec.eventId) ? rec.eventId : null)
+    .maybeSingle();
+  if (existing?.id) {
+    const { error } = await supabase.from("attendance").update(row).eq("id", existing.id);
+    if (error) throw error;
+  } else {
+    const { error } = await supabase.from("attendance").insert(row);
+    if (error) throw error;
+  }
+}
+
+export async function loadAttendance(): Promise<AttendanceRecord[]> {
+  if (!isSupabaseConfigured) return [];
+  const { data, error } = await supabase.from("attendance").select("*").order("created_at", { ascending: false });
+  if (error) throw error;
+  return (data || []).map((a: any) => ({
+    id: a.id,
+    userId: a.member_id,
+    eventId: a.event_id || undefined,
+    method: a.method,
+    status: a.status,
+    date: a.created_at,
+  }));
+}
+
+function isUuidLoose(id?: string) {
+  return !!id && /^[0-9a-f-]{32,36}$/i.test(id);
+}
+
+export async function insertChatMessage(msg: { fromId: string; toId?: string; team?: string; body: string }) {
+  if (!isSupabaseConfigured) return;
+  const row: any = {
+    from_member_id: isUuidLoose(msg.fromId) ? msg.fromId : null,
+    to_member_id: msg.toId && isUuidLoose(msg.toId) ? msg.toId : null,
+    team: msg.team || null,
+    body: msg.body,
+  };
+  if (!row.from_member_id) {
+    // Resolve sender member row by current session if id is not a uuid.
+    const { data } = await supabase.auth.getUser();
+    const email = data.user?.email;
+    if (email) {
+      const { data: m } = await supabase.from("members").select("id").eq("email", email).maybeSingle();
+      row.from_member_id = m?.id || null;
     }
-    setState((s) => ({ ...s, users: s.users.filter((u) => u.id !== id) }));
-    _log(currentUser, `Deleted member`, "members", id);
-  };
-  const suspendUser: AppState["suspendUser"] = (id) => {
-    const target = state.users.find((u) => u.id === id);
-    if (target?.role === "Super Admin") return; // Super Admin can never be suspended.
-    setState((s) => ({ ...s, users: s.users.map((u) => (u.id === id ? { ...u, status: u.status === "Suspended" ? "Active" : "Suspended" } : u)) }));
-    _log(currentUser, `Suspended/reactivated account`, "members", id);
-  };
-  const resetUserPassword: AppState["resetUserPassword"] = (id, newPassword) => {
-    const user = state.users.find((u) => u.id === id);
-    if (isSupabaseConfigured && user) callSupabaseAdmin("reset-password", { email: user.email, password: newPassword }).catch((error) => console.error("Supabase Auth reset failed", error));
-    setState((s) => ({ ...s, users: s.users.map((u) => (u.id === id ? { ...u, passwordResetHistory: [...(u.passwordResetHistory || []), { by: currentUser?.id || "system", at: new Date().toISOString() }] } : u)) }));
-    _log(currentUser, `Reset password for account`, "auth", id);
-  };
-
-  const addDepartment: AppState["addDepartment"] = (name, description, leadId) => {
-    const dep: Department = { id: "d" + Date.now(), name, description, leadId, createdAt: new Date().toISOString() };
-    setState((s) => ({ ...s, departments: [...s.departments, dep] }));
-    _log(currentUser, `Created department ${name}`, "settings", dep.id);
-  };
-  const updateDepartment: AppState["updateDepartment"] = (id, patch) => {
-    setState((s) => ({ ...s, departments: s.departments.map((d) => (d.id === id ? { ...d, ...patch } : d)) }));
-    _log(currentUser, `Updated department`, "settings", id);
-  };
-  const deleteDepartment: AppState["deleteDepartment"] = (id) => {
-    setState((s) => ({ ...s, departments: s.departments.filter((d) => d.id !== id) }));
-    _log(currentUser, `Deleted department`, "settings", id);
-  };
-  const sendChat: AppState["sendChat"] = (body, toId, team) => {
-    if (!currentUser || !body.trim()) return;
-    const msg: ChatMessage = { id: "chat" + Date.now(), fromId: currentUser.id, toId, team, body, createdAt: new Date().toISOString(), read: false };
-    setState((s) => ({ ...s, chats: [...s.chats, msg] }));
-    // Persist to Supabase so other members see it, then refresh from DB.
-    insertChatMessage({ fromId: currentUser.id, toId, team, body })
-      .then(async () => {
-        const chats = await loadChats();
-        setState((s) => ({ ...s, chats }));
-      })
-      .catch((error) => console.error("Chat send failed", error));
-    _log(currentUser, `Sent chat message`, "comms", toId || team);
-  };
-  const deleteChat: AppState["deleteChat"] = (id) => {
-    setState((s) => ({ ...s, chats: s.chats.filter((c) => c.id !== id) }));
-    deleteChatMessage(id)
-      .then(async () => {
-        const chats = await loadChats();
-        setState((s) => ({ ...s, chats }));
-      })
-      .catch((error) => console.error("Chat delete failed", error));
-  };
-  const clearChat: AppState["clearChat"] = ({ team, otherId }) => {
-    if (!currentUser) return;
-    setState((s) => ({
-      ...s,
-      chats: s.chats.filter((c) => {
-        if (team) return c.team !== team;
-        if (otherId) return !((c.fromId === currentUser.id && c.toId === otherId) || (c.fromId === otherId && c.toId === currentUser.id));
-        return true;
-      }),
-    }));
-    clearChatThread({ team, a: currentUser.id, b: otherId })
-      .then(async () => {
-        const chats = await loadChats();
-        setState((s) => ({ ...s, chats }));
-      })
-      .catch((error) => console.error("Chat clear failed", error));
-  };
-
-  const addTask: AppState["addTask"] = (t) => {
-    const newT: Task = { ...t, id: "t" + Date.now(), createdAt: new Date().toISOString(), status: "Assigned" };
-    setState((s) => ({ ...s, tasks: [...s.tasks, newT] }));
-    _log(currentUser, `Created task "${newT.title}"`, "tasks", newT.id);
-  };
-  const updateTask: AppState["updateTask"] = (id, patch) => {
-    let snap: Task | null = null;
-    setState((s) => {
-      const tasks = s.tasks.map((t) => {
-        if (t.id === id) {
-          const next = { ...t, ...patch };
-          snap = next;
-          return next;
-        }
-        return t;
-      });
-      // points logic on completion
-      let users = s.users;
-      if (patch.status === "Completed" && snap) {
-        const award = 10;
-        const ids = snap.assignees;
-        users = s.users.map((u) =>
-          ids.includes(u.id)
-            ? {
-                ...u,
-                points: u.points + award,
-                performanceScore: Math.min(100, u.performanceScore + 10),
-                activity: [{ date: new Date().toISOString(), action: `Earned +${award} for completing "${snap!.title}"` }, ...u.activity].slice(0, 50),
-              }
-            : u
-        );
-      }
-      return { ...s, tasks, users };
-    });
-    _log(currentUser, `Updated task`, "tasks", id);
-  };
-  const deleteTask: AppState["deleteTask"] = (id) => {
-    setState((s) => ({ ...s, tasks: s.tasks.filter((t) => t.id !== id) }));
-    _log(currentUser, `Deleted task`, "tasks", id);
-  };
-
-  const refreshEvents = () => loadEvents().then((events) => setState((s) => ({ ...s, events }))).catch((e) => console.error(e));
-  const refreshFinance = () => loadFinance().then((finance) => setState((s) => ({ ...s, finance }))).catch((e) => console.error(e));
-
-  const addEvent: AppState["addEvent"] = (e) => {
-    const newE: Event = { ...e, id: "e" + Date.now() };
-    setState((s) => ({ ...s, events: [...s.events, newE] }));
-    insertEvent(newE).then(refreshEvents).catch((err) => console.error("Event create failed", err));
-    _log(currentUser, `Created event "${newE.title}"`, "events", newE.id);
-  };
-  const updateEvent: AppState["updateEvent"] = (id, patch) => {
-    let updated: Event | undefined;
-    setState((s) => {
-      const events = s.events.map((e) => (e.id === id ? ((updated = { ...e, ...patch }), updated) : e));
-      return { ...s, events };
-    });
-    if (updated) updateEventRow(id, updated).then(refreshEvents).catch((err) => console.error("Event update failed", err));
-    _log(currentUser, `Updated event`, "events", id);
-  };
-  const deleteEvent: AppState["deleteEvent"] = (id) => {
-    setState((s) => ({ ...s, events: s.events.filter((e) => e.id !== id) }));
-    deleteEventRow(id).then(refreshEvents).catch((err) => console.error("Event delete failed", err));
-    _log(currentUser, `Deleted event`, "events", id);
-  };
-  const duplicateEvent: AppState["duplicateEvent"] = (id) => {
-    const e = state.events.find((x) => x.id === id);
-    if (!e) return;
-    const dup: Event = { ...e, id: "e" + Date.now(), title: e.title + " (Copy)", status: "Upcoming", attended: 0, registered: 0, feedback: [], expense: 0, income: 0 };
-    setState((s) => ({ ...s, events: [...s.events, dup] }));
-    insertEvent(dup).then(refreshEvents).catch((err) => console.error("Event duplicate failed", err));
-    _log(currentUser, `Duplicated event`, "events", id);
-  };
-  const archiveEvent: AppState["archiveEvent"] = (id) => {
-    let updated: Event | undefined;
-    setState((s) => {
-      const events = s.events.map((e) => (e.id === id ? ((updated = { ...e, status: "Archived" as const }), updated) : e));
-      return { ...s, events };
-    });
-    if (updated) updateEventRow(id, updated).then(refreshEvents).catch((err) => console.error("Event archive failed", err));
-    _log(currentUser, `Archived event`, "events", id);
-  };
-
-  const addFinance: AppState["addFinance"] = (f) => {
-    const newF: FinanceEntry = { ...f, id: "f" + Date.now() };
-    setState((s) => ({ ...s, finance: [newF, ...s.finance] }));
-    insertFinance(newF).then(refreshFinance).catch((err) => console.error("Finance create failed", err));
-    _log(currentUser, `Added finance entry: ${f.type} PKR ${f.amount}`, "finance");
-  };
-  const updateFinance: AppState["updateFinance"] = (id, patch) => {
-    let updated: FinanceEntry | undefined;
-    setState((s) => {
-      const finance = s.finance.map((f) => (f.id === id ? ((updated = { ...f, ...patch }), updated) : f));
-      return { ...s, finance };
-    });
-    if (updated) updateFinanceRow(id, updated).then(refreshFinance).catch((err) => console.error("Finance update failed", err));
-    _log(currentUser, `Edited finance entry`, "finance", id);
-  };
-  const deleteFinance: AppState["deleteFinance"] = (id) => {
-    setState((s) => ({ ...s, finance: s.finance.filter((f) => f.id !== id) }));
-    deleteFinanceRow(id).then(refreshFinance).catch((err) => console.error("Finance delete failed", err));
-    _log(currentUser, `Deleted finance entry`, "finance", id);
-  };
-
-  const addOutreach: AppState["addOutreach"] = (o) => {
-    setState((s) => ({ ...s, outreach: [...s.outreach, { ...o, id: "o" + Date.now() }] }));
-    _log(currentUser, `Added outreach contact: ${o.organization}`, "outreach");
-  };
-  const updateOutreach: AppState["updateOutreach"] = (id, patch) => {
-    setState((s) => ({ ...s, outreach: s.outreach.map((o) => (o.id === id ? { ...o, ...patch } : o)) }));
-    _log(currentUser, `Updated outreach contact`, "outreach", id);
-  };
-  const deleteOutreach: AppState["deleteOutreach"] = (id) => {
-    setState((s) => ({ ...s, outreach: s.outreach.filter((o) => o.id !== id) }));
-    _log(currentUser, `Deleted outreach contact`, "outreach", id);
-  };
-
-  const addApplication: AppState["addApplication"] = (a) =>
-    setState((s) => ({ ...s, applications: [...s.applications, { ...a, id: "a" + Date.now() }] }));
-  const updateApplication: AppState["updateApplication"] = (id, patch) =>
-    setState((s) => ({
-      ...s,
-      applications: s.applications.map((a) => (a.id === id ? { ...a, ...patch } : a)),
-    }));
-
-  const addNotification: AppState["addNotification"] = (n) =>
-    setState((s) => ({
-      ...s,
-      notifications: [
-        { ...n, id: "n" + Date.now(), createdAt: new Date().toISOString(), read: false },
-        ...s.notifications,
-      ],
-    }));
-  const markAllRead = () =>
-    setState((s) => ({ ...s, notifications: s.notifications.map((n) => ({ ...n, read: true })) }));
-
-  // attendance with dedup per day & event scope
-  const markAttendance: AppState["markAttendance"] = (userId, method, status, eventId, date) => {
-    let duplicate = false;
-    const dateStr = new Date(date || Date.now()).toDateString();
-    setState((s) => {
-      const exists = s.attendance.find(
-        (a) => a.userId === userId && new Date(a.date).toDateString() === dateStr && (eventId ? a.eventId === eventId : !a.eventId)
-      );
-      if (exists) {
-        duplicate = true;
-        return s;
-      }
-      const rec: AttendanceRecord = { id: "att-" + Date.now() + Math.random(), userId, date: date || new Date().toISOString(), method, status, eventId };
-      const points = status === "Present" ? 5 : status === "Late" ? 2 : 0;
-      // recompute attendance % per user across all recs
-      const allRecs = [rec, ...s.attendance];
-      const recompute = (u: User) => {
-        const mine = allRecs.filter((a) => a.userId === u.id);
-        if (mine.length === 0) return 0;
-        const present = mine.filter((m) => m.status === "Present").length;
-        return Math.round((present / mine.length) * 100);
-      };
-      const users = s.users.map((u) =>
-        u.id === userId
-          ? {
-              ...u,
-              points: u.points + points,
-              performanceScore: Math.min(100, Math.round((recompute(u) * 0.6) + ((u.points + points) / 10) * 0.4)),
-              attendance: recompute(u),
-              activity: [{ date: rec.date, action: `Attendance marked (${method}, ${status})${eventId ? " for event" : ""}` }, ...u.activity].slice(0, 50),
-            }
-          : { ...u, attendance: recompute(u) }
-      );
-      return { ...s, attendance: allRecs, users };
-    });
-    if (!duplicate) _log(currentUser, `Marked attendance for member`, "attendance", userId);
-    return { ok: !duplicate, duplicate };
-  };
-
-  const hasPermission = useCallback(
-    (perm: Permission) => {
-      if (!currentUser) return false;
-      return rolePermissions[currentUser.role].includes(perm);
-    },
-    [currentUser]
-  );
-
-  const isSuperAdmin = useCallback(() => currentUser?.role === "Super Admin" || isSuperAdminEmail(currentUser?.email), [currentUser]);
-
-  const value = useMemo<AppState>(
-    () => ({
-      ...state,
-      currentUser,
-      theme,
-      setTheme,
-      toggleTheme,
-      login,
-      logout,
-      register,
-      forgotPassword,
-      resetPassword,
-      changePassword,
-      addUser,
-      updateUser,
-      deleteUser,
-      suspendUser,
-      resetUserPassword,
-      addDepartment,
-      updateDepartment,
-      deleteDepartment,
-      sendChat,
-      deleteChat,
-      clearChat,
-      addTask,
-      updateTask,
-      deleteTask,
-      addEvent,
-      updateEvent,
-      deleteEvent,
-      duplicateEvent,
-      archiveEvent,
-      addFinance,
-      updateFinance,
-      deleteFinance,
-      addOutreach,
-      updateOutreach,
-      deleteOutreach,
-      addApplication,
-      updateApplication,
-      addNotification,
-      markAllRead,
-      markAttendance,
-      logActivity,
-      hasPermission,
-      isSuperAdmin,
-    }),
-    [state, currentUser, theme, setTheme, toggleTheme, login, logout, register, forgotPassword, resetPassword, changePassword, hasPermission, isSuperAdmin, logActivity]
-  );
-
-  return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
+  }
+  const { error } = await supabase.from("chat").insert(row);
+  if (error) throw error;
 }
 
-export function useApp() {
-  const ctx = useContext(Ctx);
-  if (!ctx) throw new Error("useApp must be inside AppProvider");
-  return ctx;
+export async function deleteMemberRow(id: string) {
+  if (!isSupabaseConfigured) return;
+  const { error } = await supabase.from("members").delete().eq("id", id);
+  if (error) throw error;
+}
+
+export async function deleteChatMessage(id: string) {
+  if (!isSupabaseConfigured) return;
+  const { error } = await supabase.from("chat").delete().eq("id", id);
+  if (error) throw error;
+}
+
+export async function clearChatThread(opts: { team?: string; a?: string; b?: string }) {
+  if (!isSupabaseConfigured) return;
+  if (opts.team) {
+    const { error } = await supabase.from("chat").delete().eq("team", opts.team);
+    if (error) throw error;
+    return;
+  }
+  if (opts.a && opts.b) {
+    // delete both directions of a DM thread
+    await supabase.from("chat").delete().eq("from_member_id", opts.a).eq("to_member_id", opts.b);
+    await supabase.from("chat").delete().eq("from_member_id", opts.b).eq("to_member_id", opts.a);
+  }
+}
+
+export async function loadChats(): Promise<ChatMessage[]> {
+  if (!isSupabaseConfigured) return [];
+  const { data, error } = await supabase.from("chat").select("*").order("created_at", { ascending: true });
+  if (error) throw error;
+  return (data || []).map((c: any) => ({
+    id: c.id,
+    fromId: c.from_member_id,
+    toId: c.to_member_id || undefined,
+    team: c.team || undefined,
+    body: c.body,
+    read: c.read,
+    createdAt: c.created_at,
+  }));
+}
+
+export async function loadMembers(): Promise<User[]> {
+  if (!isSupabaseConfigured) return [];
+  const [{ data: members }, { data: departments }] = await Promise.all([
+    supabase.from("members").select("*"),
+    supabase.from("departments").select("id,name"),
+  ]);
+  return (members || []).map((m: any) => ({
+    id: m.id,
+    username: m.username,
+    memberId: m.member_id,
+    specialNumber: m.special_number,
+    name: m.name,
+    email: m.email,
+    photoUrl: m.profile_photo_url || undefined,
+    phone: m.phone || "",
+    role: m.role,
+    position: m.position,
+    department: (departments || []).find((d: any) => d.id === m.department_id)?.name || "General",
+    skills: [],
+    joinDate: m.join_date,
+    avatar: "teal",
+    points: m.points,
+    attendance: Number(m.attendance),
+    performanceScore: Number(m.performance_score),
+    status: m.status,
+    certificates: [],
+    activity: [],
+    createdBy: m.created_by || undefined,
+    createdAt: m.created_at,
+    lastLogin: m.last_login || undefined,
+  }));
+}
+
+function mapMemberRow(m: any, departments: any[]): User {
+  return {
+    id: m.id,
+    username: m.username,
+    memberId: m.member_id,
+    specialNumber: m.special_number,
+    name: m.name,
+    email: m.email,
+    photoUrl: m.profile_photo_url || undefined,
+    phone: m.phone || "",
+    role: m.role,
+    position: m.position,
+    department: (departments || []).find((d: any) => d.id === m.department_id)?.name || "General",
+    skills: [],
+    joinDate: m.join_date,
+    avatar: "teal",
+    points: m.points,
+    attendance: Number(m.attendance),
+    performanceScore: Number(m.performance_score),
+    status: m.status,
+    certificates: [],
+    activity: [],
+    createdBy: m.created_by || undefined,
+    createdAt: m.created_at,
+    lastLogin: m.last_login || undefined,
+  };
+}
+
+// Guarantees a row exists in `members` for the given auth user, and returns the
+// canonical User (with the real members.id). This keeps currentUser.id aligned
+// with members.id so direct messages and member lists work correctly.
+export async function ensureMember(opts: {
+  email: string;
+  name?: string;
+  username?: string;
+  role?: string;
+  specialNumber?: string;
+}): Promise<User | null> {
+  if (!isSupabaseConfigured) return null;
+  const { data: departments } = await supabase.from("departments").select("id,name");
+
+  // Already exists?
+  const { data: existing } = await supabase.from("members").select("*").eq("email", opts.email).maybeSingle();
+  if (existing) {
+    await supabase.from("members").update({ last_login: new Date().toISOString() }).eq("id", existing.id);
+    return mapMemberRow({ ...existing, last_login: new Date().toISOString() }, departments || []);
+  }
+
+  // Generate a unique member_id / special_number based on current count.
+  const { count } = await supabase.from("members").select("*", { count: "exact", head: true });
+  const next = (count || 0) + 1;
+  const suffix = Math.random().toString(36).slice(2, 5).toUpperCase();
+  const row = {
+    username: opts.username || opts.email.split("@")[0],
+    member_id: `SOC-2026-${String(next).padStart(4, "0")}`,
+    special_number: opts.specialNumber || `SM_${26200 + next}_${suffix}`,
+    name: opts.name || opts.email.split("@")[0],
+    email: opts.email,
+    role: opts.role || "General Member",
+    position: "Member",
+    status: "Active",
+    attendance: 0,
+    points: 0,
+    performance_score: 0,
+    join_date: new Date().toISOString().slice(0, 10),
+    created_at: new Date().toISOString(),
+    last_login: new Date().toISOString(),
+  };
+  const { data: inserted, error } = await supabase.from("members").insert(row).select("*").maybeSingle();
+  if (error) {
+    console.error("ensureMember insert failed", error);
+    return null;
+  }
+  return inserted ? mapMemberRow(inserted, departments || []) : null;
+}
+
+export async function uploadToSupabaseStorage(path: string, file: File) {
+  if (!isSupabaseConfigured) throw new Error("Supabase is not configured");
+  const { error } = await supabase.storage.from(SUPABASE_STORAGE_BUCKET).upload(path, file, {
+    upsert: true,
+    contentType: file.type,
+  });
+  if (error) throw error;
+  const { data } = supabase.storage.from(SUPABASE_STORAGE_BUCKET).getPublicUrl(path);
+  return data.publicUrl;
+}
+
+export async function callSupabaseAdmin(action: string, payload: Record<string, unknown>) {
+  const response = await fetch("/api/supabase/admin-user", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action, ...payload }),
+  });
+  const text = await response.text();
+  const json = text ? JSON.parse(text) : {};
+  if (!response.ok) throw new Error(json.error || "Supabase admin function failed");
+  return json;
+}
+
+export async function updateMemberRow(id: string, member: Partial<User>, depId: string | null) {
+  if (!isSupabaseConfigured || !isUuid(id)) return;
+  const { error } = await supabase.from("members").update({
+    username: member.username,
+    name: member.name,
+    email: member.email,
+    phone: member.phone,
+    role: member.role,
+    department_id: depId,
+    position: member.position,
+    status: member.status,
+    profile_photo_url: member.photoUrl,
+    attendance: member.attendance,
+    points: member.points,
+    performance_score: member.performanceScore,
+  }).eq("id", id);
+  if (error) throw error;
 }
