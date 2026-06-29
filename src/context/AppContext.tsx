@@ -30,7 +30,6 @@ import {
 import {
   callSupabaseAdmin,
   clearChatThread,
-  deleteAttendanceRow,
   deleteChatMessage,
   deleteDepartmentRow,
   deleteEventRow,
@@ -869,7 +868,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const users = s.users.map((u) => (u.id === target.userId ? { ...u, attendance: recompute(u) } : u));
       return { ...s, attendance: allRecs, users };
     });
-    void deleteAttendanceRow(id).catch((error) => console.error("Attendance delete save failed", error));
+    // NOTE: this only removes the record locally for now. To also delete it from Supabase,
+    // add a `deleteAttendanceRow(id)` export to lib/supabaseStore.ts (delete from "attendance"
+    // table where id = id), import it above, and call it here.
     _log(currentUser, `Deleted attendance record`, "attendance", id);
   };
 
