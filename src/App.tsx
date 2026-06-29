@@ -10,7 +10,7 @@ import Dashboard from "./pages/Dashboard";
 import Members from "./pages/Members";
 import Tasks from "./pages/Tasks";
 import Attendance from "./pages/Attendance";
-import AttendanceReport from "./pages/AttendanceReport";
+import AttendanceReport from "./pages/AttendanceReport.tsx";
 import Events from "./pages/Events";
 import Finance from "./pages/Finance";
 import HR from "./pages/HR";
