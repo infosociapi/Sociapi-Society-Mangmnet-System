@@ -223,6 +223,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const stored = await loadErpState().catch(() => null);
       const next = stored || defaultState();
       const { data: authData } = isSupabaseConfigured ? await supabase.auth.getSession() : { data: { session: null } } as any;
+
+      // Ensure the official department list exists in Supabase on first load.
+      if (isSupabaseConfigured) {
+        const existing = await loadDepartments().catch(() => []);
+        if (!existing.length) {
+          for (const dep of defaultDepartments) {
+            await insertDepartment(dep.name, dep.description).catch(() => {});
+          }
+        }
+      }
+
       if (!active) return;
       setState(next);
       const email = authData.session?.user?.email;

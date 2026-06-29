@@ -64,6 +64,7 @@ create table if not exists public.events (
   id uuid primary key default gen_random_uuid(),
   title text not null,
   description text not null default '',
+  type text not null default 'event',
   event_date timestamptz not null,
   venue text not null default '',
   capacity integer not null default 0,
@@ -76,8 +77,11 @@ create table if not exists public.events (
   created_by uuid references public.members(id) on delete set null,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
-  constraint events_status_check check (status in ('Upcoming', 'Ongoing', 'Completed', 'Archived'))
+  constraint events_status_check check (status in ('Upcoming', 'Ongoing', 'Completed', 'Archived')),
+  constraint events_type_check check (type in ('event', 'meeting'))
 );
+
+alter table public.events add column if not exists type text not null default 'event';
 
 create table if not exists public.event_files (
   id uuid primary key default gen_random_uuid(),
