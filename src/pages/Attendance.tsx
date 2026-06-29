@@ -62,6 +62,14 @@ export default function Attendance() {
     return Object.entries(map).map(([name, value]) => ({ name, value }));
   }, [attendance]);
 
+  const eligibleUsers = useMemo(() => {
+    const cutoff = new Date(attendanceDate + "T23:59:59").getTime();
+    return users.filter((u) => {
+      const joined = u.joinDate ? new Date(u.joinDate).getTime() : 0;
+      return joined <= cutoff;
+    });
+  }, [users, attendanceDate]);
+
   const handleManualMark = (userId: string, status: "Present" | "Absent" | "Late" | "Excused") => {
     markAttendance(userId, "Manual", status, eventId || undefined, new Date(attendanceDate).toISOString());
   };
@@ -85,6 +93,14 @@ export default function Attendance() {
     if (!member) {
       setScanned({ name: "Not found", duplicate: true, error: "Member not found" });
       setTimeout(() => setScanned(null), 2500);
+      return;
+    }
+
+    const cutoff = new Date(attendanceDate + "T23:59:59").getTime();
+    const joined = member.joinDate ? new Date(member.joinDate).getTime() : 0;
+    if (joined > cutoff) {
+      setScanned({ name: member.name, duplicate: true, error: "This member joined after this date — can't be marked" });
+      setTimeout(() => setScanned(null), 3000);
       return;
     }
 
@@ -240,9 +256,12 @@ export default function Attendance() {
         </div>
 
         <h3 className="font-semibold mb-4">Manual Attendance & Member QR</h3>
+        <p className="text-xs text-slate-500 mb-3">
+          Only members who had already joined on or before {new Date(attendanceDate).toLocaleDateString()} are shown — new members can't be marked for meetings/events held before they joined.
+        </p>
 
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
-          {users.map((u) => (
+          {eligibleUsers.map((u) => (
             <div key={u.id} className="flex items-center gap-3 p-3 rounded-xl bg-slate-100/40 dark:bg-white/5">
               <Avatar name={u.name} gradient={u.avatar} src={u.photoUrl} />
               <div className="flex-1 min-w-0">
