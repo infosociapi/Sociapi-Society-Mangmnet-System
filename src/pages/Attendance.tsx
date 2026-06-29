@@ -62,13 +62,24 @@ export default function Attendance() {
     return Object.entries(map).map(([name, value]) => ({ name, value }));
   }, [attendance]);
 
+  // Eligibility cutoff: if a specific event/meeting is selected, use that event's
+  // actual date+time as the cutoff (not end-of-day). This stops a member who joins
+  // mid-day from being shown as eligible for a meeting that already happened earlier
+  // that same day. "General attendance" (no event picked) keeps end-of-day, since
+  // there's no fixed clock time to check against — HR/admin mark it whenever they want.
+  const eligibilityCutoff = useMemo(() => {
+    const selectedEvent = events.find((e) => e.id === eventId);
+    return selectedEvent
+      ? new Date(selectedEvent.date).getTime()
+      : new Date(attendanceDate + "T23:59:59").getTime();
+  }, [events, eventId, attendanceDate]);
+
   const eligibleUsers = useMemo(() => {
-    const cutoff = new Date(attendanceDate + "T23:59:59").getTime();
     return users.filter((u) => {
       const joined = u.joinDate ? new Date(u.joinDate).getTime() : 0;
-      return joined <= cutoff;
+      return joined <= eligibilityCutoff;
     });
-  }, [users, attendanceDate]);
+  }, [users, eligibilityCutoff]);
 
   const handleManualMark = (userId: string, status: "Present" | "Absent" | "Late" | "Excused") => {
     markAttendance(userId, "Manual", status, eventId || undefined, new Date(attendanceDate).toISOString());
@@ -96,9 +107,8 @@ export default function Attendance() {
       return;
     }
 
-    const cutoff = new Date(attendanceDate + "T23:59:59").getTime();
     const joined = member.joinDate ? new Date(member.joinDate).getTime() : 0;
-    if (joined > cutoff) {
+    if (joined > eligibilityCutoff) {
       setScanned({ name: member.name, duplicate: true, error: "This member joined after this date — can't be marked" });
       setTimeout(() => setScanned(null), 3000);
       return;
@@ -257,7 +267,9 @@ export default function Attendance() {
 
         <h3 className="font-semibold mb-4">Manual Attendance & Member QR</h3>
         <p className="text-xs text-slate-500 mb-3">
-          Only members who had already joined on or before {new Date(attendanceDate).toLocaleDateString()} are shown — new members can't be marked for meetings/events held before they joined.
+          {eventId
+            ? "Only members who had already joined before this event/meeting's date and time are shown — new members can't be marked for a meeting that happened before they joined."
+            : `Only members who had already joined on or before ${new Date(attendanceDate).toLocaleDateString()} are shown.`}
         </p>
 
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">

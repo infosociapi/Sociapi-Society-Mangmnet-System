@@ -30,6 +30,7 @@ import {
 import {
   callSupabaseAdmin,
   clearChatThread,
+  deleteAttendanceRow,
   deleteChatMessage,
   deleteDepartmentRow,
   deleteEventRow,
@@ -248,10 +249,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (hydrated) saveErpState(state).catch((error) => console.error("Supabase save failed", error));
   }, [state, hydrated]);
 
-  // TEMP suppress list: attendance records the user deleted locally but that still
-  // exist in Supabase (since lib/supabaseStore.ts has no delete-attendance call yet).
-  // Without this, the 6-second live-sync poll re-fetches the row and it "comes back".
-  // Remove this once a real deleteAttendanceRow() is wired into deleteAttendanceRecord.
+  // Local race-guard: between clicking delete and the next live-sync poll completing,
+  // suppress a just-deleted attendance id from re-appearing if the poll happens to land
+  // before the Supabase delete is confirmed. Actual deletion now goes through
+  // deleteAttendanceRow() below, so this is just a short-lived safety net, not the
+  // source of truth — refresh no longer brings deleted rows back.
   const deletedAttendanceIdsRef = useRef<Set<string>>(new Set());
 
   // Live sync: every few seconds pull latest members + chats from Supabase so new
@@ -863,8 +865,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  // Deletes both locally (instant UI feedback) and from Supabase (so it's actually
+  // gone, not just hidden). Previously this only removed it from local state and
+  // stuffed the id into an in-memory suppress set — that set resets on page refresh,
+  // so the next live-sync poll would re-fetch the row from Supabase and it would
+  // "come back." deleteAttendanceRow() below is the real fix.
   const deleteAttendanceRecord: AppState["deleteAttendanceRecord"] = (id) => {
-    deletedAttendanceIdsRef.current.add(id);
+    deletedAttendanceIdsRef.current.add(id); // race-guard until the delete confirms
     setState((s) => {
       const target = s.attendance.find((a) => a.id === id);
       const allRecs = s.attendance.filter((a) => a.id !== id);
@@ -878,10 +885,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const users = s.users.map((u) => (u.id === target.userId ? { ...u, attendance: recompute(u) } : u));
       return { ...s, attendance: allRecs, users };
     });
-    // NOTE: this only removes the record locally + suppresses it from live-sync re-fetches.
-    // It still exists in Supabase. To truly delete it from the DB, add a
-    // `deleteAttendanceRow(id)` export to lib/supabaseStore.ts (delete from "attendance"
-    // table where id = id), import it above, and call it here.
+    deleteAttendanceRow(id).catch((error) => console.error("Attendance delete failed", error));
     _log(currentUser, `Deleted attendance record`, "attendance", id);
   };
 
