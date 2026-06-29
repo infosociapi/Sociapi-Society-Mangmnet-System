@@ -27,7 +27,7 @@ import Chat from "./pages/Chat";
 import Architecture from "./pages/Architecture";
 import AccountManagement from "./pages/AccountManagement";
 import PasswordVault from "./pages/PasswordVault";
-import PublicMemberProfile from "./pages/Public MemberProfile.tsx";
+import PublicMemberProfile from "./pages/PublicMemberProfile";
 import type { ReactNode } from "react";
 import { canAccess, type Section } from "./lib/access";
 
@@ -64,6 +64,8 @@ export default function App() {
             <Route path="/reset" element={<Reset />} />
           </Route>
 
+          <Route path="/member/:memberId" element={<PublicMemberProfile />} />
+
           <Route path="/app" element={<Protected><DashboardLayout /></Protected>}>
             <Route index element={<Navigate to="/app/me" replace />} />
             <Route path="me" element={<RequireAccess section="me"><MyDashboard /></RequireAccess>} />
@@ -89,7 +91,6 @@ export default function App() {
             <Route path="settings" element={<RequireAccess section="settings"><Settings /></RequireAccess>} />
           </Route>
 
-          <Route path="/member/:memberId" element={<PublicMemberProfile />} />
           <Route path="*" element={<Navigate to="/login" replace />} />
         </Routes>
       </Router>

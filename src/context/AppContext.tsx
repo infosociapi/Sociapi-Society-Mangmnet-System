@@ -220,20 +220,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     let active = true;
     (async () => {
-      const stored = await loadErpState().catch(() => null);
+      let stored = await loadErpState().catch(() => null);
+      if (isSupabaseConfigured && (!stored || stored.departments.length === 0)) {
+        await Promise.all(defaultDepartments.map((d) => insertDepartment(d.name, d.description).catch(() => null)));
+        stored = await loadErpState().catch(() => null);
+      }
       const next = stored || defaultState();
       const { data: authData } = isSupabaseConfigured ? await supabase.auth.getSession() : { data: { session: null } } as any;
-
-      // Ensure the official department list exists in Supabase on first load.
-      if (isSupabaseConfigured) {
-        const existing = await loadDepartments().catch(() => []);
-        if (!existing.length) {
-          for (const dep of defaultDepartments) {
-            await insertDepartment(dep.name, dep.description).catch(() => {});
-          }
-        }
-      }
-
       if (!active) return;
       setState(next);
       const email = authData.session?.user?.email;
@@ -575,17 +568,26 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const addDepartment: AppState["addDepartment"] = (name, description, leadId) => {
     const dep: Department = { id: "d" + Date.now(), name, description, leadId, createdAt: new Date().toISOString() };
     setState((s) => ({ ...s, departments: [...s.departments, dep] }));
-    insertDepartment(name, description, leadId).then(() => loadDepartments().then((departments) => setState((s) => ({ ...s, departments })))).catch((e) => console.error("Department create failed", e));
+    insertDepartment(name, description, leadId).then(async () => {
+      const departments = await loadDepartments();
+      setState((s) => ({ ...s, departments }));
+    }).catch((e) => console.error("Department create failed", e));
     _log(currentUser, `Created department ${name}`, "settings", dep.id);
   };
   const updateDepartment: AppState["updateDepartment"] = (id, patch) => {
     setState((s) => ({ ...s, departments: s.departments.map((d) => (d.id === id ? { ...d, ...patch } : d)) }));
-    updateDepartmentRow(id, patch).then(() => loadDepartments().then((departments) => setState((s) => ({ ...s, departments })))).catch((e) => console.error("Department update failed", e));
+    updateDepartmentRow(id, patch).then(async () => {
+      const departments = await loadDepartments();
+      setState((s) => ({ ...s, departments }));
+    }).catch((e) => console.error("Department update failed", e));
     _log(currentUser, `Updated department`, "settings", id);
   };
   const deleteDepartment: AppState["deleteDepartment"] = (id) => {
     setState((s) => ({ ...s, departments: s.departments.filter((d) => d.id !== id) }));
-    deleteDepartmentRow(id).then(() => loadDepartments().then((departments) => setState((s) => ({ ...s, departments })))).catch((e) => console.error("Department delete failed", e));
+    deleteDepartmentRow(id).then(async () => {
+      const departments = await loadDepartments();
+      setState((s) => ({ ...s, departments }));
+    }).catch((e) => console.error("Department delete failed", e));
     _log(currentUser, `Deleted department`, "settings", id);
   };
   const sendChat: AppState["sendChat"] = (body, toId, team) => {

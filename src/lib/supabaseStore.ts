@@ -214,6 +214,7 @@ export async function loadEvents(): Promise<Event[]> {
     id: e.id,
     title: e.title,
     description: e.description,
+    type: e.type || "event",
     date: e.event_date,
     location: e.venue,
     capacity: e.capacity,
