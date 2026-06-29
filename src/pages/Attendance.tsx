@@ -63,10 +63,7 @@ export default function Attendance() {
   }, [attendance]);
 
   // Eligibility cutoff: if a specific event/meeting is selected, use that event's
-  // actual date+time as the cutoff (not end-of-day). This stops a member who joins
-  // mid-day from being shown as eligible for a meeting that already happened earlier
-  // that same day. "General attendance" (no event picked) keeps end-of-day, since
-  // there's no fixed clock time to check against — HR/admin mark it whenever they want.
+  // actual date+time as the cutoff. "General attendance" (no event picked) keeps end-of-day.
   const eligibilityCutoff = useMemo(() => {
     const selectedEvent = events.find((e) => e.id === eventId);
     return selectedEvent
@@ -74,9 +71,11 @@ export default function Attendance() {
       : new Date(attendanceDate + "T23:59:59").getTime();
   }, [events, eventId, attendanceDate]);
 
+  // FIX: Filter out members who joined AFTER the selected date
   const eligibleUsers = useMemo(() => {
     return users.filter((u) => {
       const joined = u.joinDate ? new Date(u.joinDate).getTime() : 0;
+      // Member can only be marked for dates on or after their joinDate
       return joined <= eligibilityCutoff;
     });
   }, [users, eligibilityCutoff]);
@@ -153,7 +152,7 @@ export default function Attendance() {
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Attendance</h1>
           <p className="text-sm text-slate-500">
-            Manual, QR, backdated event and meeting attendance.
+            Manual, QR, backdated event and meeting attendance. ⚠️ Members are only eligible for dates on/after their join date.
           </p>
         </div>
         <div className="flex gap-2">
@@ -320,6 +319,12 @@ export default function Attendance() {
             </div>
           ))}
         </div>
+
+        {eligibleUsers.length === 0 && (
+          <div className="mt-4 p-4 rounded-xl bg-amber-500/10 text-amber-700 dark:text-amber-300 text-sm ring-1 ring-amber-500/20">
+            No eligible members for {eventId ? "this date/event" : "this date"}.
+          </div>
+        )}
       </Card>
 
       <Modal open={qrOpen} onClose={() => setQrOpen(false)} title="QR Attendance Scanner">

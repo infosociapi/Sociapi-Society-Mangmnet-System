@@ -41,9 +41,6 @@ import {
   insertDepartment,
   insertEvent,
   insertFinance,
-  insertTask,
-  insertApplication,
-  insertOutreach,
   loadAttendance,
   loadChats,
   loadDepartments,
@@ -56,9 +53,6 @@ import {
   updateEventRow,
   updateFinanceRow,
   updateMemberRow,
-  updateTaskRow,
-  updateApplicationRow,
-  updateOutreachRow,
   upsertAttendanceRecord,
 } from "../lib/supabaseStore";
 import { isSupabaseConfigured, supabase, supabaseConfigMessage } from "../lib/supabase";
@@ -94,7 +88,7 @@ interface AppState {
   suspendUser: (id: string) => void;
   resetUserPassword: (id: string, newPassword: string) => void;
 
-  addDepartment: (name: string, description: string, leadId?: string) => void;
+  addDepartment: (name: string, description: string, leadId?: string, coLeadId?: string) => void;
   updateDepartment: (id: string, patch: Partial<Department>) => void;
   deleteDepartment: (id: string) => void;
   sendChat: (body: string, toId?: string, team?: string) => void;
@@ -589,10 +583,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
     _log(currentUser, `Reset password for account`, "auth", id);
   };
 
-  const addDepartment: AppState["addDepartment"] = (name, description, leadId) => {
-    const dep: Department = { id: "d" + Date.now(), name, description, leadId, createdAt: new Date().toISOString() };
+  const addDepartment: AppState["addDepartment"] = (name, description, leadId, coLeadId) => {
+    const dep: Department = { id: "d" + Date.now(), name, description, leadId, coLeadId, createdAt: new Date().toISOString() };
     setState((s) => ({ ...s, departments: [...s.departments, dep] }));
-    insertDepartment(name, description, leadId).then(async () => {
+    insertDepartment(name, description, leadId, coLeadId).then(async () => {
       const departments = await loadDepartments();
       setState((s) => ({ ...s, departments }));
     }).catch((e) => console.error("Department create failed", e));
@@ -657,9 +651,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const addTask: AppState["addTask"] = (t) => {
     const newT: Task = { ...t, id: "t" + Date.now(), createdAt: new Date().toISOString(), status: "Assigned" };
     setState((s) => ({ ...s, tasks: [...s.tasks, newT] }));
-    if (isSupabaseConfigured) {
-      insertTask(newT).catch((error) => console.error("Task insert failed", error));
-    }
     _log(currentUser, `Created task "${newT.title}"`, "tasks", newT.id);
   };
   const updateTask: AppState["updateTask"] = (id, patch) => {
@@ -691,9 +682,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
       }
       return { ...s, tasks, users };
     });
-    if (snap && isSupabaseConfigured) {
-      updateTaskRow(id, snap).catch((error) => console.error("Task update failed", error));
-    }
     _log(currentUser, `Updated task`, "tasks", id);
   };
   const deleteTask: AppState["deleteTask"] = (id) => {
@@ -764,28 +752,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
   };
 
   const addOutreach: AppState["addOutreach"] = (o) => {
-    const newO = { ...o, id: "o" + Date.now() };
-    setState((s) => ({ ...s, outreach: [...s.outreach, newO] }));
-    if (isSupabaseConfigured) {
-      insertOutreach(newO).catch((error) => console.error("Outreach insert failed", error));
-    }
+    setState((s) => ({ ...s, outreach: [...s.outreach, { ...o, id: "o" + Date.now() }] }));
     _log(currentUser, `Added outreach contact: ${o.organization}`, "outreach");
   };
   const updateOutreach: AppState["updateOutreach"] = (id, patch) => {
-    let updated: OutreachContact | undefined;
-    setState((s) => ({
-      ...s,
-      outreach: s.outreach.map((o) => {
-        if (o.id === id) {
-          updated = { ...o, ...patch };
-          return updated;
-        }
-        return o;
-      }),
-    }));
-    if (updated && isSupabaseConfigured) {
-      updateOutreachRow(id, updated).catch((error) => console.error("Outreach update failed", error));
-    }
+    setState((s) => ({ ...s, outreach: s.outreach.map((o) => (o.id === id ? { ...o, ...patch } : o)) }));
     _log(currentUser, `Updated outreach contact`, "outreach", id);
   };
   const deleteOutreach: AppState["deleteOutreach"] = (id) => {
@@ -793,29 +764,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
     _log(currentUser, `Deleted outreach contact`, "outreach", id);
   };
 
-  const addApplication: AppState["addApplication"] = (a) => {
-    const newA = { ...a, id: "a" + Date.now() };
-    setState((s) => ({ ...s, applications: [...s.applications, newA] }));
-    if (isSupabaseConfigured) {
-      insertApplication(newA).catch((error) => console.error("Application insert failed", error));
-    }
-  };
-  const updateApplication: AppState["updateApplication"] = (id, patch) => {
-    let updated: Application | undefined;
+  const addApplication: AppState["addApplication"] = (a) =>
+    setState((s) => ({ ...s, applications: [...s.applications, { ...a, id: "a" + Date.now() }] }));
+  const updateApplication: AppState["updateApplication"] = (id, patch) =>
     setState((s) => ({
       ...s,
-      applications: s.applications.map((a) => {
-        if (a.id === id) {
-          updated = { ...a, ...patch };
-          return updated;
-        }
-        return a;
-      }),
+      applications: s.applications.map((a) => (a.id === id ? { ...a, ...patch } : a)),
     }));
-    if (updated && isSupabaseConfigured) {
-      updateApplicationRow(id, updated).catch((error) => console.error("Application update failed", error));
-    }
-  };
 
   const addNotification: AppState["addNotification"] = (n) =>
     setState((s) => ({
