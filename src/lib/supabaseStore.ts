@@ -147,6 +147,8 @@ export async function updateOutreachRow(id: string, o: OutreachContact) {
   const { error } = await supabase.from("outreach").update(outreachRow(o)).eq("id", id);
   if (error) throw error;
 }
+
+export async function deleteOutreachRow(id: string) {
   if (!isSupabaseConfigured || !isUuid(id)) return;
   const { error } = await supabase.from("outreach").delete().eq("id", id);
   if (error) throw error;
@@ -194,6 +196,8 @@ export async function updateApplicationRow(id: string, a: Application) {
   const { error } = await supabase.from("hr_applications").update(applicationRow(a)).eq("id", id);
   if (error) throw error;
 }
+
+export async function loadApplications(): Promise<Application[]> {
   if (!isSupabaseConfigured) return [];
   const { data, error } = await supabase.from("hr_applications").select("*").order("applied_at", { ascending: false });
   if (error) throw error;
@@ -336,17 +340,20 @@ function eventRow(e: Event) {
     income: e.income,
   };
 }
+
 export async function insertEvent(e: Event): Promise<string | null> {
   if (!isSupabaseConfigured) return null;
   const { data, error } = await supabase.from("events").insert(eventRow(e)).select("id").maybeSingle();
   if (error) throw error;
   return data?.id || null;
 }
+
 export async function updateEventRow(id: string, e: Event) {
   if (!isSupabaseConfigured || !isUuid(id)) return;
   const { error } = await supabase.from("events").update(eventRow(e)).eq("id", id);
   if (error) throw error;
 }
+
 export async function deleteEventRow(id: string) {
   if (!isSupabaseConfigured || !isUuid(id)) return;
   const { error } = await supabase.from("events").delete().eq("id", id);
@@ -417,22 +424,26 @@ function financeRow(f: FinanceEntry) {
     reference: f.reference || null,
   };
 }
+
 export async function insertFinance(f: FinanceEntry): Promise<string | null> {
   if (!isSupabaseConfigured) return null;
   const { data, error } = await supabase.from("finance_entries").insert(financeRow(f)).select("id").maybeSingle();
   if (error) throw error;
   return data?.id || null;
 }
+
 export async function updateFinanceRow(id: string, f: FinanceEntry) {
   if (!isSupabaseConfigured || !isUuid(id)) return;
   const { error } = await supabase.from("finance_entries").update(financeRow(f)).eq("id", id);
   if (error) throw error;
 }
+
 export async function deleteFinanceRow(id: string) {
   if (!isSupabaseConfigured || !isUuid(id)) return;
   const { error } = await supabase.from("finance_entries").delete().eq("id", id);
   if (error) throw error;
 }
+
 export async function loadFinance(): Promise<FinanceEntry[]> {
   if (!isSupabaseConfigured) return [];
   const { data, error } = await supabase.from("finance_entries").select("*").order("entry_date", { ascending: false });
