@@ -300,6 +300,16 @@ export async function upsertAttendanceRecord(rec: AttendanceRecord) {
   }
 }
 
+// Deletes a single attendance record from Supabase. Without this, deleting a
+// record only removed it from local React state — the row stayed in the
+// "attendance" table, so the next live-sync poll (every 6s) would re-fetch it
+// and it would reappear after a page refresh.
+export async function deleteAttendanceRow(id: string) {
+  if (!isSupabaseConfigured || !isUuid(id)) return;
+  const { error } = await supabase.from("attendance").delete().eq("id", id);
+  if (error) throw error;
+}
+
 export async function loadAttendance(): Promise<AttendanceRecord[]> {
   if (!isSupabaseConfigured) return [];
   const { data, error } = await supabase.from("attendance").select("*").order("created_at", { ascending: false });
