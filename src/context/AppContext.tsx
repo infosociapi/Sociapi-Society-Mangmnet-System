@@ -291,9 +291,24 @@ export function AppProvider({ children }: { children: ReactNode }) {
     };
     const interval = setInterval(tick, 6000);
     tick();
+
+    // Realtime push: as soon as ANY client inserts/updates/deletes a row in
+    // `members`, refetch immediately instead of waiting for the next 6s
+    // poll. This is what makes a brand-new member show up on other open
+    // dashboards (and the Members list) right away, without a manual page
+    // refresh, instead of only after the next polling tick or never at all
+    // if the tab loses focus / the interval gets throttled by the browser.
+    const channel = supabase
+      .channel("members-realtime")
+      .on("postgres_changes", { event: "*", schema: "public", table: "members" }, () => {
+        tick();
+      })
+      .subscribe();
+
     return () => {
       active = false;
       clearInterval(interval);
+      supabase.removeChannel(channel);
     };
   }, [hydrated, currentUser]);
 
@@ -522,11 +537,19 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const depId = state.departments.find((d) => d.name === newUser.department)?.id || null;
 
       insertMember(newUser, depId)
-        .then((realId) => {
+        .then(async (realId) => {
           if (realId) {
+            // Pull the freshly inserted row straight back from Supabase
+            // (instead of just swapping the temp id for the real one
+            // locally) so the dashboard immediately reflects exactly what
+            // is in the database — correct department name, server-side
+            // defaults, etc. We don't wait for the next 6s poll tick.
+            const members = await loadMembers().catch(() => null);
             setState((s) => ({
               ...s,
-              users: s.users.map((x) => (x.id === tempId ? { ...x, id: realId } : x)),
+              users: members && members.length
+                ? members
+                : s.users.map((x) => (x.id === tempId ? { ...x, id: realId } : x)),
             }));
           } else {
             addNotification({

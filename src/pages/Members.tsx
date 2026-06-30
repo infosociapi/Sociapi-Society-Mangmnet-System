@@ -43,7 +43,14 @@ export default function Members() {
   const [viewing, setViewing] = useState<User | null>(null);
   const [open, setOpen] = useState(false);
 
-  const deptNames = ["All", "HR Manager", "Outreach Member", "Video Editor", "Women Lead", "Decor Lead", "Decor", "Graphic", "General Secretary", "Project Manager", "Event Manager", "Technical Lead", "Media", "Graphic Designers Lead", "Organizer", "Graphic Designer", "Leadership"];
+  // Stable reference (useMemo, not a plain array literal) so it doesn't
+  // change identity on every render — that identity is used as a dependency
+  // further down and an unstable reference was part of what caused the
+  // Department/Role dropdown reset bug.
+  const deptNames = useMemo(
+    () => ["All", "HR Manager", "Outreach Member", "Video Editor", "Women Lead", "Decor Lead", "Decor", "Graphic", "General Secretary", "Project Manager", "Event Manager", "Technical Lead", "Media", "Graphic Designers Lead", "Organizer", "Graphic Designer", "Leadership"],
+    []
+  );
 
   const filtered = useMemo(() => {
     return users.filter((u) => {
@@ -311,7 +318,19 @@ function MemberFormModal({
     }
   );
 
+  // IMPORTANT: this effect must only re-run when the modal is opened or the
+  // *identity* of the member being edited changes — never on every parent
+  // re-render. The previous version depended on `departments`, which is a
+  // brand-new array literal created on every render of the parent <Members>
+  // component (it re-renders every ~6s from the live-sync poll). That made
+  // this effect re-fire constantly and call setForm(editing), silently
+  // overwriting whatever Department/Role the user had just picked in the
+  // dropdown a split second earlier — which is exactly the "snaps back to
+  // HR Manager / Lead" bug. Keying off editing?.id (a stable primitive) and
+  // open fixes that while still loading fresh data whenever a different
+  // member is opened for editing or the modal is reopened.
   useEffect(() => {
+    if (!open) return;
     if (editing) {
       setForm(editing);
     } else {
@@ -337,7 +356,8 @@ function MemberFormModal({
         avatar: "teal",
       });
     }
-  }, [editing, open, departments]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editing?.id, open]);
 
   const upd = (k: string, v: any) => setForm((f) => ({ ...f, [k]: v }));
 
