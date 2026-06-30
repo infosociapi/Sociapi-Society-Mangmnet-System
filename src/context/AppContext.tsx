@@ -232,18 +232,37 @@ export function AppProvider({ children }: { children: ReactNode }) {
   });
   const [hydrated, setHydrated] = useState(false);
 
+  // Tracks whether we're currently showing real Supabase data vs the local
+  // hardcoded fallback (defaultState()). This used to not exist at all,
+  // which meant: if loadErpState() failed for any reason, the app silently
+  // rendered the 3 seed members AND the auto-save effect below would still
+  // fire on that fallback state. We now gate saving on this flag so a
+  // failed read can never masquerade as "the database" and get persisted
+  // back over real rows.
+  const [usingFallbackData, setUsingFallbackData] = useState(false);
+
   useEffect(() => {
     let active = true;
     (async () => {
-      let stored = await loadErpState().catch(() => null);
+      let stored = await loadErpState().catch((error) => {
+        console.error("Initial Supabase load failed — falling back to local seed data. This is NOT the same as the database being empty; check RLS policies, project URL/keys, and the Supabase logs.", error);
+        return null;
+      });
       if (isSupabaseConfigured && (!stored || stored.departments.length === 0)) {
-        await Promise.all(defaultDepartments.map((d) => insertDepartment(d.name, d.description).catch(() => null)));
-        stored = await loadErpState().catch(() => null);
+        await Promise.all(defaultDepartments.map((d) => insertDepartment(d.name, d.description).catch((error) => {
+          console.error("Default department insert failed", error);
+          return null;
+        })));
+        stored = await loadErpState().catch((error) => {
+          console.error("Retry Supabase load failed", error);
+          return null;
+        });
       }
       const next = stored || defaultState();
       const { data: authData } = isSupabaseConfigured ? await supabase.auth.getSession() : { data: { session: null } } as any;
       if (!active) return;
       setState(next);
+      setUsingFallbackData(!stored);
       const email = authData.session?.user?.email;
       if (email) setCurrentUser(next.users.find((u: User) => u.email.toLowerCase() === email.toLowerCase()) || null);
       setHydrated(true);
@@ -254,8 +273,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
-    if (hydrated) saveErpState(state).catch((error) => console.error("Supabase save failed", error));
-  }, [state, hydrated]);
+    // Never write local fallback/seed data back to Supabase — that data
+    // does not represent the real database, only what we render when a
+    // read failed. Persisting it could overwrite legitimate rows.
+    if (hydrated && !usingFallbackData) saveErpState(state).catch((error) => console.error("Supabase save failed", error));
+  }, [state, hydrated, usingFallbackData]);
 
   const deletedAttendanceIdsRef = useRef<Set<string>>(new Set());
 
@@ -276,17 +298,24 @@ export function AppProvider({ children }: { children: ReactNode }) {
         const filteredAttendance = deletedAttendanceIdsRef.current.size
           ? attendance.filter((a: AttendanceRecord) => !deletedAttendanceIdsRef.current.has(a.id))
           : attendance;
+        // loadMembers() now throws instead of silently returning [] on a
+        // read failure (see supabaseStore.ts), so reaching this line means
+        // the fetch genuinely succeeded — including the case where there
+        // are truly 0 members. We trust it unconditionally instead of the
+        // old `members.length ? members : s.users` fallback, which masked
+        // every read failure as "no change" and kept stale data forever.
         setState((s) => ({
           ...s,
-          users: members.length ? members : s.users,
+          users: members,
           chats,
           events,
           finance,
           departments: departments.length ? departments : s.departments,
           attendance: filteredAttendance,
         }));
+        setUsingFallbackData(false);
       } catch (error) {
-        console.error("Live sync failed", error);
+        console.error("Live sync failed — members list was NOT updated this cycle. Check the error above for the actual cause (RLS policy, network, wrong project, etc).", error);
       }
     };
     const interval = setInterval(tick, 6000);
@@ -544,7 +573,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
             // locally) so the dashboard immediately reflects exactly what
             // is in the database — correct department name, server-side
             // defaults, etc. We don't wait for the next 6s poll tick.
-            const members = await loadMembers().catch(() => null);
+            const members = await loadMembers().catch((error) => {
+              console.error("Post-insert member refetch failed (member WAS inserted — this is just the immediate re-read failing; the next live-sync tick or realtime event will retry):", error);
+              return null;
+            });
             setState((s) => ({
               ...s,
               users: members && members.length

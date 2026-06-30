@@ -231,8 +231,25 @@ export async function loadErpState(): Promise<ErpStateSnapshot | null> {
     supabase.from("task_assignees").select("*"),
     supabase.from("task_submissions").select("*")
   ]);
-  const errors = [members, departments, events, finance, outreach, applications, notifications, attendance, audit, chat, tasks, assignees, submissions].map((r) => r.error).filter(Boolean);
-  if (errors[0]) throw errors[0];
+  // CRITICAL FIX: this used to throw on the FIRST error found among any of
+  // these 13 independent table reads, discarding the whole snapshot —
+  // including members, which had loaded successfully in the very same
+  // call. One bad RLS policy on e.g. `audit_logs` or `hr_applications` was
+  // enough to make the entire app fall back to hardcoded 3-person seed
+  // data, with the failure logged nowhere. Now we log each failing table
+  // individually and only hard-fail if `members` itself (the table this
+  // bug report is about) couldn't be read — every other table degrades
+  // gracefully to an empty list instead of blanking the whole app.
+  const named: [string, { data: any; error: any }][] = [
+    ["members", members], ["departments", departments], ["events", events],
+    ["finance_entries", finance], ["outreach", outreach], ["hr_applications", applications],
+    ["notifications", notifications], ["attendance", attendance], ["audit_logs", audit],
+    ["chat", chat], ["tasks", tasks], ["task_assignees", assignees], ["task_submissions", submissions],
+  ];
+  for (const [table, res] of named) {
+    if (res.error) console.error(`loadErpState: failed to read "${table}" (RLS / permissions / wrong project?):`, res.error);
+  }
+  if (members.error) throw members.error;
 
   const users: User[] = (members.data || []).map((m: any) => ({
     id: m.id,
@@ -618,10 +635,28 @@ export async function loadChats(): Promise<ChatMessage[]> {
 
 export async function loadMembers(): Promise<User[]> {
   if (!isSupabaseConfigured) return [];
-  const [{ data: members }, { data: departments }] = await Promise.all([
+  const [membersRes, departmentsRes] = await Promise.all([
     supabase.from("members").select("*"),
     supabase.from("departments").select("id,name"),
   ]);
+  // CRITICAL FIX: this function used to destructure only `data` and ignore
+  // `error` entirely. If Row Level Security denied the SELECT (or any other
+  // permission/network failure occurred), Supabase returns `{ data: null,
+  // error }` — the error was silently dropped, `data` defaulted to `null`,
+  // and this returned an empty array. Calling code then treated "fetch
+  // failed" identically to "table is genuinely empty" and fell back to
+  // stale local state, every 6 seconds, forever, with no error ever logged
+  // anywhere. That is why members appeared to "disappear" with zero trace.
+  if (membersRes.error) {
+    console.error("loadMembers: failed to read members table (check RLS SELECT policy / project keys):", membersRes.error);
+    throw membersRes.error;
+  }
+  if (departmentsRes.error) {
+    console.error("loadMembers: failed to read departments table:", departmentsRes.error);
+    throw departmentsRes.error;
+  }
+  const members = membersRes.data;
+  const departments = departmentsRes.data;
   return (members || []).map((m: any) => ({
     id: m.id,
     username: m.username,
