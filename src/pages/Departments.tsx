@@ -8,14 +8,14 @@ export default function Departments() {
   const canManage = hasPermission("manage_settings") || hasPermission("manage_members");
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<any>(null);
-  const [form, setForm] = useState({ name: "", description: "", leadId: "" });
+  const [form, setForm] = useState({ name: "", description: "", leadId: "", coLeadId: "" });
 
-  const openNew = () => { setEditing(null); setForm({ name: "", description: "", leadId: "" }); setOpen(true); };
-  const openEdit = (d: any) => { setEditing(d); setForm({ name: d.name, description: d.description, leadId: d.leadId || "" }); setOpen(true); };
+  const openNew = () => { setEditing(null); setForm({ name: "", description: "", leadId: "", coLeadId: "" }); setOpen(true); };
+  const openEdit = (d: any) => { setEditing(d); setForm({ name: d.name, description: d.description, leadId: d.leadId || "", coLeadId: d.coLeadId || "" }); setOpen(true); };
   const save = () => {
     if (!form.name) return;
     if (editing) updateDepartment(editing.id, form);
-    else addDepartment(form.name, form.description, form.leadId || undefined);
+    else addDepartment(form.name, form.description, form.leadId || undefined, form.coLeadId || undefined);
     setOpen(false);
   };
 
@@ -35,8 +35,9 @@ export default function Departments() {
           
           // Group by role: Lead, Co-Lead, Regular Members
           const lead = deptMembers.find((u) => u.id === d.leadId);
-          const coLeads = deptMembers.filter((u) => u.role.includes("Co-") && u.id !== d.leadId);
-          const regularMembers = deptMembers.filter((u) => !u.role.includes("Lead") && !u.role.includes("Co-") && u.id !== d.leadId);
+          const coLead = deptMembers.find((u) => u.id === d.coLeadId);
+          const coLeads = deptMembers.filter((u) => u.role.includes("Co-") && u.id !== d.leadId && u.id !== d.coLeadId);
+          const regularMembers = deptMembers.filter((u) => !u.role.includes("Lead") && !u.role.includes("Co-") && u.id !== d.leadId && u.id !== d.coLeadId);
           
           const avgAttendance = deptMembers.length ? Math.round(deptMembers.reduce((s, u) => s + u.attendance, 0) / deptMembers.length) : 0;
           const avgScore = deptMembers.length ? Math.round(deptMembers.reduce((s, u) => s + u.performanceScore, 0) / deptMembers.length) : 0;
@@ -81,7 +82,22 @@ export default function Departments() {
                 </div>
               )}
 
-              {/* Co-Leads */}
+              {/* Co-Lead */}
+              {coLead && (
+                <div className="pt-2 border-t border-slate-200 dark:border-white/10">
+                  <p className="text-xs uppercase tracking-wider text-slate-500 font-semibold mb-2">⭐ Co-Lead</p>
+                  <div className="flex items-center gap-2 p-2 rounded-lg bg-violet-500/10 ring-1 ring-violet-500/20">
+                    <Avatar name={coLead.name} gradient={coLead.avatar} size={36} />
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-semibold truncate">{coLead.name}</p>
+                      <p className="text-xs text-slate-500 truncate">{coLead.position}</p>
+                    </div>
+                    <Badge tone="violet">{coLead.points} pts</Badge>
+                  </div>
+                </div>
+              )}
+
+              {/* Other Co-Leads */}
               {coLeads.length > 0 && (
                 <div className="pt-2 border-t border-slate-200 dark:border-white/10">
                   <p className="text-xs uppercase tracking-wider text-slate-500 font-semibold mb-2">👥 Co-Leads ({coLeads.length})</p>
@@ -135,6 +151,13 @@ export default function Departments() {
             <Label>Department Lead</Label>
             <Select value={form.leadId} onChange={(e) => setForm({ ...form, leadId: e.target.value })}>
               <option value="">No lead assigned</option>
+              {users.map((u) => <option key={u.id} value={u.id}>{u.name} ({u.role})</option>)}
+            </Select>
+          </div>
+          <div>
+            <Label>Co-Lead</Label>
+            <Select value={form.coLeadId} onChange={(e) => setForm({ ...form, coLeadId: e.target.value })}>
+              <option value="">No co-lead assigned</option>
               {users.map((u) => <option key={u.id} value={u.id}>{u.name} ({u.role})</option>)}
             </Select>
           </div>
