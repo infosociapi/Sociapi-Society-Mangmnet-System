@@ -15,6 +15,7 @@ export default function Attendance() {
   const [scanInput, setScanInput] = useState("");
   const [scanned, setScanned] = useState<{ name: string; duplicate: boolean; error?: string } | null>(null);
   const [memberQr, setMemberQr] = useState<{ user: any; img: string } | null>(null);
+  const [allowPastMembers, setAllowPastMembers] = useState(false);
 
   // --- Edit Attendance panel state ---
   const [editOpen, setEditOpen] = useState(false);
@@ -71,14 +72,15 @@ export default function Attendance() {
       : new Date(attendanceDate + "T23:59:59").getTime();
   }, [events, eventId, attendanceDate]);
 
-  // FIX: Filter out members who joined AFTER the selected date
+  // FIX: Filter based on joinDate OR allow override
   const eligibleUsers = useMemo(() => {
+    if (allowPastMembers) return users; // Show all for backdating
+    
     return users.filter((u) => {
       const joined = u.joinDate ? new Date(u.joinDate).getTime() : 0;
-      // Member can only be marked for dates on or after their joinDate
       return joined <= eligibilityCutoff;
     });
-  }, [users, eligibilityCutoff]);
+  }, [users, eligibilityCutoff, allowPastMembers]);
 
   const handleManualMark = (userId: string, status: "Present" | "Absent" | "Late" | "Excused") => {
     markAttendance(userId, "Manual", status, eventId || undefined, new Date(attendanceDate).toISOString());
@@ -106,11 +108,13 @@ export default function Attendance() {
       return;
     }
 
-    const joined = member.joinDate ? new Date(member.joinDate).getTime() : 0;
-    if (joined > eligibilityCutoff) {
-      setScanned({ name: member.name, duplicate: true, error: "This member joined after this date — can't be marked" });
-      setTimeout(() => setScanned(null), 3000);
-      return;
+    if (!allowPastMembers) {
+      const joined = member.joinDate ? new Date(member.joinDate).getTime() : 0;
+      if (joined > eligibilityCutoff) {
+        setScanned({ name: member.name, duplicate: true, error: "This member joined after this date — enable override to mark" });
+        setTimeout(() => setScanned(null), 3000);
+        return;
+      }
     }
 
     const r = markAttendance(
@@ -258,16 +262,24 @@ export default function Attendance() {
           </div>
 
           <div className="flex items-end">
-            <div className="text-xs text-slate-500 px-3 py-2 rounded-xl bg-slate-100 dark:bg-white/5 w-full">
-              Admin can mark or edit attendance for any past date.
-            </div>
+            <label className="flex items-center gap-2 px-3 py-2 rounded-xl bg-amber-500/10 ring-1 ring-amber-500/20 cursor-pointer w-full">
+              <input
+                type="checkbox"
+                checked={allowPastMembers}
+                onChange={(e) => setAllowPastMembers(e.target.checked)}
+                className="rounded"
+              />
+              <span className="text-xs font-medium text-amber-700 dark:text-amber-300">Allow past members</span>
+            </label>
           </div>
         </div>
 
         <h3 className="font-semibold mb-4">Manual Attendance & Member QR</h3>
         <p className="text-xs text-slate-500 mb-3">
-          {eventId
-            ? "Only members who had already joined before this event/meeting's date and time are shown — new members can't be marked for a meeting that happened before they joined."
+          {allowPastMembers 
+            ? "✓ Override enabled — marking anyone for any date."
+            : eventId
+            ? "Only members who had already joined before this event/meeting's date and time are shown."
             : `Only members who had already joined on or before ${new Date(attendanceDate).toLocaleDateString()} are shown.`}
         </p>
 
@@ -322,7 +334,7 @@ export default function Attendance() {
 
         {eligibleUsers.length === 0 && (
           <div className="mt-4 p-4 rounded-xl bg-amber-500/10 text-amber-700 dark:text-amber-300 text-sm ring-1 ring-amber-500/20">
-            No eligible members for {eventId ? "this date/event" : "this date"}.
+            No eligible members for {eventId ? "this date/event" : "this date"}. Enable "Allow past members" override to mark new joiners.
           </div>
         )}
       </Card>
@@ -345,6 +357,16 @@ export default function Attendance() {
               ))}
             </Select>
           </div>
+
+          <label className="flex items-center gap-2 p-3 rounded-xl bg-amber-500/10 ring-1 ring-amber-500/20 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={allowPastMembers}
+              onChange={(e) => setAllowPastMembers(e.target.checked)}
+              className="rounded"
+            />
+            <span className="text-xs font-medium text-amber-700 dark:text-amber-300">Allow past members</span>
+          </label>
 
           <div className="text-center py-4">
             <div className="relative mx-auto h-56 w-56 rounded-3xl soc-bg-soft ring-2 ring-indigo-500/30 flex items-center justify-center overflow-hidden">

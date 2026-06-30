@@ -6,37 +6,36 @@ import { Edit2, Plus, Search, Trash2, UserCircle2, Award, Activity, Mail, Phone,
 
 // Common roles for each department
 const departmentRoles: Record<string, Role[]> = {
-  "Founder & President": ["Founder", "President"],
-  "President": ["President", "Co-Founder"],
-  "HR Manager": ["HR Manager", "Executive"],
-  "Outreach Member": ["Outreach Manager", "Executive"],
-  "Video Editor": ["Video Editor", "Event Manager"],
-  "Women Lead": ["Executive", "Department Lead"],
-  "Decor Lead": ["Department Lead", "Event Manager"],
+  "Founder & President": ["Founder", "Co-Founder", "Executive"],
+  "President": ["Executive", "Founder"],
+  "HR Manager": ["HR Manager", "Executive", "General Member"],
+  "Outreach Member": ["Outreach Manager", "Executive", "General Member"],
+  "Video Editor": ["Event Manager", "General Member"],
+  "Women Lead": ["Executive", "Department Lead", "General Member"],
+  "Decor Lead": ["Department Lead", "Event Manager", "General Member"],
   "Decor": ["Event Manager", "General Member"],
   "Graphic": ["Event Manager", "General Member"],
   "Graphics": ["Event Manager", "General Member"],
-  "General Secretary": ["Executive", "HR Manager"],
-  "Project Manager": ["Department Lead", "Event Manager"],
-  "Event Manager": ["Event Manager", "Department Lead"],
-  "Technical Lead": ["Department Lead", "Event Manager"],
+  "General Secretary": ["Executive", "HR Manager", "General Member"],
+  "Project Manager": ["Department Lead", "Event Manager", "General Member"],
+  "Event Manager": ["Event Manager", "Department Lead", "General Member"],
+  "Technical Lead": ["Department Lead", "Event Manager", "General Member"],
   "Media Graphic Designers": ["Event Manager", "General Member"],
   "Organizer": ["Event Manager", "General Member"],
   "Graphic Designer": ["Event Manager", "General Member"],
+  "General": ["General Member", "Event Manager", "Executive"],
 };
 
 const allRoles: Role[] = [
   "Super Admin",
   "Founder",
   "Co-Founder",
-  "President",
   "Executive",
   "HR Manager",
   "Department Lead",
   "Finance Manager",
   "Outreach Manager",
   "Event Manager",
-  "Video Editor",
   "General Member",
 ];
 
@@ -315,8 +314,10 @@ function MemberFormModal({
 
   // Re-init when modal opens
   useEffect(() => {
-    setForm(
-      editing || {
+    if (editing) {
+      setForm(editing);
+    } else {
+      setForm({
         name: "",
         username: "",
         email: "",
@@ -334,14 +335,15 @@ function MemberFormModal({
         activity: [],
         joinDate: new Date().toISOString(),
         avatar: "teal",
-      }
-    );
+      });
+    }
   }, [editing, open, departments]);
 
   const upd = (k: string, v: any) => setForm((f) => ({ ...f, [k]: v }));
 
   // Get available roles for selected department
-  const availableRoles = form.department ? (departmentRoles[form.department as string] || allRoles) : allRoles;
+  const dept = form.department as string;
+  const availableRoles = departmentRoles[dept] || allRoles;
 
   const generateCredentials = () => {
     const base = (form.name || "member").toLowerCase().replace(/\(.+?\)/g, "").trim().replace(/\s+/g, ".").replace(/[^a-z.]/g, "");
@@ -373,11 +375,11 @@ function MemberFormModal({
           <Label>Department</Label>
           <Select value={form.department || ""} onChange={(e) => {
             const dept = e.target.value;
+            const roles = departmentRoles[dept] || allRoles;
             setForm((f) => ({
               ...f,
               department: dept,
-              // Auto-select first available role for this department
-              role: (departmentRoles[dept] || allRoles)[0],
+              role: roles[0],
               position: dept,
             }));
           }}>
@@ -385,11 +387,11 @@ function MemberFormModal({
           </Select>
         </div>
         <div>
-          <Label>Role in {form.department || "Department"}</Label>
+          <Label>Role</Label>
           <Select value={form.role as string} onChange={(e) => upd("role", e.target.value)}>
             {availableRoles.map((r) => <option key={r}>{r}</option>)}
           </Select>
-          <p className="text-[10px] text-slate-500 mt-1">Department-specific role options</p>
+          <p className="text-[10px] text-slate-500 mt-1">Department-specific options</p>
         </div>
         <div>
           <Label>Position</Label>
