@@ -179,21 +179,28 @@ interface PersistShape {
 }
 
 const defaultDepartments: Department[] = [
-  "Presidency",
-  "Human Resources (HR)",
-  "Outreach",
-  "Video Editing",
-  "Women's Affairs",
-  "Decor",
-  "Graphics",
-  "Media",
-  "Technical",
-  "Projects",
-  "Events",
-  "Organizing",
-  "Secretariat",
-  "Logistic",
-].map((name, i) => ({ id: `d${i + 1}`, name, description: `${name} department`, createdAt: new Date().toISOString() }));
+  { name: "Presidency", lead: "President", roles: ["President", "Vice President"] },
+  { name: "Human Resources (HR)", lead: "HR Manager", roles: ["HR Manager", "HR Member"] },
+  { name: "Outreach", lead: "Outreach Manager", roles: ["Outreach Manager", "Outreach Member"] },
+  { name: "Video Editing", lead: "Video Editor", roles: ["Video Editor", "Video Assistant"] },
+  { name: "Women's Affairs", lead: "Women Lead", roles: ["Women Lead", "Women Member"] },
+  { name: "Decor", lead: "Decor Lead", roles: ["Decor Lead", "Decor Graphic", "Decor Member"] },
+  { name: "Graphics", lead: "Graphics Lead", roles: ["Graphics Lead", "Graphic Designer"] },
+  { name: "Media", lead: "Media Lead", roles: ["Media Graphic Designers Lead", "Graphic Designer", "Media Member"] },
+  { name: "Technical", lead: "Technical Lead", roles: ["Technical Lead", "Technical Member"] },
+  { name: "Projects", lead: "Project Manager", roles: ["Project Manager", "Project Member"] },
+  { name: "Events", lead: "Event Manager", roles: ["Event Manager", "Event Member"] },
+  { name: "Organizing", lead: "Organizer", roles: ["Organizer", "Organizing Member"] },
+  { name: "Secretariat", lead: "General Secretary", roles: ["General Secretary", "Secretary Member"] },
+  { name: "Logistics", lead: "Logistics Lead", roles: ["Logistics Lead", "Logistics Member"] },
+].map((d, i) => ({ 
+  id: `d${i + 1}`, 
+  name: d.name, 
+  description: `${d.name} department`, 
+  leadId: undefined,
+  coLeadId: undefined,
+  createdAt: new Date().toISOString() 
+}));
 
 function defaultState(): PersistShape {
   return {
@@ -249,15 +256,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (hydrated) saveErpState(state).catch((error) => console.error("Supabase save failed", error));
   }, [state, hydrated]);
 
-  // Local race-guard: between clicking delete and the next live-sync poll completing,
-  // suppress a just-deleted attendance id from re-appearing if the poll happens to land
-  // before the Supabase delete is confirmed. Actual deletion now goes through
-  // deleteAttendanceRow() below, so this is just a short-lived safety net, not the
-  // source of truth — refresh no longer brings deleted rows back.
   const deletedAttendanceIdsRef = useRef<Set<string>>(new Set());
 
-  // Live sync: every few seconds pull latest members + chats from Supabase so new
-  // accounts and messages appear for everyone without a manual refresh.
   useEffect(() => {
     if (!hydrated || !isSupabaseConfigured || !currentUser) return;
     let active = true;
@@ -328,7 +328,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
     async (email: string, password: string) => {
       if (!isSupabaseConfigured) return { ok: false, error: supabaseConfigMessage };
 
-      // Allow login by username OR email. Resolve username -> email from the members list if possible.
       const local = state.users.find(
         (x) => x.email.toLowerCase() === email.toLowerCase() || x.username.toLowerCase() === email.toLowerCase()
       );
@@ -338,15 +337,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
         return { ok: false, error: "This account is suspended. Contact the Super Admin." };
       }
 
-      // Authenticate directly against Supabase Auth (source of truth).
       const { data, error } = await supabase.auth.signInWithPassword({ email: loginEmail, password });
       if (error) return { ok: false, error: `Supabase Auth failed: ${error.message}` };
 
       const authEmail = data.user?.email || loginEmail;
-      // ONLY the hardcoded Super Admin email can be Super Admin.
       const isSuper = isSuperAdminEmail(authEmail);
 
-      // Ensure a canonical row exists in the Supabase `members` table and use its real id.
       let profile = await ensureMember({
         email: authEmail,
         name: local?.name || authEmail.split("@")[0],
@@ -359,17 +355,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
         return { ok: false, error: "Login succeeded but member profile could not be created in Supabase. Check RLS policies on the members table." };
       }
 
-      // Enforce the single Super Admin rule.
       if (isSuper && profile.role !== "Super Admin") {
         updateUser(profile.id, { role: "Super Admin" });
         profile = { ...profile, role: "Super Admin" };
       } else if (!isSuper && profile.role === "Super Admin") {
-        // Someone other than Zuhair must never keep Super Admin.
         updateUser(profile.id, { role: "General Member" });
         profile = { ...profile, role: "General Member" };
       }
 
-      // Refresh full member list so this user (and Super Admin) sees everyone.
       const members = await loadMembers();
       setState((s) => ({ ...s, users: members.length ? members : [...s.users, profile] }));
       setCurrentUser(profile);
@@ -407,7 +400,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
         department: data.department || "General",
         skills: data.skills || [],
         joinDate: new Date().toISOString(),
-        // INITIAL RULE
         points: 0,
         attendance: 0,
         performanceScore: 0,
@@ -419,7 +411,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
       };
       if (!isSupabaseConfigured) return { ok: false, error: "Supabase is not configured." };
 
-      // Client-side sign up works both locally and on Vercel (no serverless function needed).
       const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
         email: newUser.email,
         password: data.password,
@@ -429,7 +420,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
       });
       if (signUpError) return { ok: false, error: signUpError.message };
 
-      // Create the canonical members row (so Super Admin sees them too).
       const profile = await ensureMember({
         email: newUser.email,
         name: newUser.name,
@@ -438,7 +428,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
         specialNumber: newUser.specialNumber,
       });
 
-      // If Supabase has "Confirm email" ON, there is no active session yet.
       if (!signUpData.session) {
         const members = await loadMembers();
         setState((s) => ({ ...s, users: members.length ? members : [...s.users, newUser] }));
@@ -505,7 +494,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
         createdBy: currentUser?.id,
         createdAt: new Date().toISOString(),
         passwordResetHistory: [],
-        // enforce initial rule for newly added members
         points: 0,
         attendance: 0,
         performanceScore: 0,
@@ -551,6 +539,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       _log(currentUser, `Added member ${newUser.name}`, "members", newUser.id);
       return { ...s, users: [...s.users, newUser] };
     });
+
   const updateUser: AppState["updateUser"] = (id, patch) => {
     const depId = state.departments.find((d) => d.name === patch.department)?.id || null;
     setState((s) => ({ ...s, users: s.users.map((u) => (u.id === id ? { ...u, ...patch } : u)) }));
@@ -558,24 +547,25 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (isSupabaseConfigured) updateMemberRow(id, patch, depId).catch((error) => console.error("Member update failed", error));
     _log(currentUser, `Updated member`, "members", id);
   };
+
   const deleteUser: AppState["deleteUser"] = (id) => {
     const user = state.users.find((u) => u.id === id);
-    if (user?.role === "Super Admin") return; // Super Admin can never be deleted.
-    // Remove from members table immediately so it disappears for everyone.
+    if (user?.role === "Super Admin") return;
     if (isSupabaseConfigured && user) {
       deleteMemberRow(id).catch((error) => console.error("Member delete failed", error));
-      // Best-effort: also remove the Supabase Auth login (Vercel-only function).
       callSupabaseAdmin("delete", { email: user.email }).catch(() => {});
     }
     setState((s) => ({ ...s, users: s.users.filter((u) => u.id !== id) }));
     _log(currentUser, `Deleted member`, "members", id);
   };
+
   const suspendUser: AppState["suspendUser"] = (id) => {
     const target = state.users.find((u) => u.id === id);
-    if (target?.role === "Super Admin") return; // Super Admin can never be suspended.
+    if (target?.role === "Super Admin") return;
     setState((s) => ({ ...s, users: s.users.map((u) => (u.id === id ? { ...u, status: u.status === "Suspended" ? "Active" : "Suspended" } : u)) }));
     _log(currentUser, `Suspended/reactivated account`, "members", id);
   };
+
   const resetUserPassword: AppState["resetUserPassword"] = (id, newPassword) => {
     const user = state.users.find((u) => u.id === id);
     if (isSupabaseConfigured && user) callSupabaseAdmin("reset-password", { email: user.email, password: newPassword }).catch((error) => console.error("Supabase Auth reset failed", error));
@@ -584,7 +574,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
   };
 
   const addDepartment: AppState["addDepartment"] = (name, description, leadId, coLeadId) => {
-    const dep: Department = { id: "d" + Date.now(), name, description, leadId, coLeadId, createdAt: new Date().toISOString() };
+    const dep: Department = { 
+      id: "d" + Date.now(), 
+      name, 
+      description, 
+      leadId, 
+      coLeadId,
+      createdAt: new Date().toISOString() 
+    };
     setState((s) => ({ ...s, departments: [...s.departments, dep] }));
     insertDepartment(name, description, leadId, coLeadId).then(async () => {
       const departments = await loadDepartments();
@@ -592,6 +589,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }).catch((e) => console.error("Department create failed", e));
     _log(currentUser, `Created department ${name}`, "settings", dep.id);
   };
+
   const updateDepartment: AppState["updateDepartment"] = (id, patch) => {
     setState((s) => ({ ...s, departments: s.departments.map((d) => (d.id === id ? { ...d, ...patch } : d)) }));
     updateDepartmentRow(id, patch).then(async () => {
@@ -600,6 +598,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }).catch((e) => console.error("Department update failed", e));
     _log(currentUser, `Updated department`, "settings", id);
   };
+
   const deleteDepartment: AppState["deleteDepartment"] = (id) => {
     setState((s) => ({ ...s, departments: s.departments.filter((d) => d.id !== id) }));
     deleteDepartmentRow(id).then(async () => {
@@ -608,11 +607,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }).catch((e) => console.error("Department delete failed", e));
     _log(currentUser, `Deleted department`, "settings", id);
   };
+
   const sendChat: AppState["sendChat"] = (body, toId, team) => {
     if (!currentUser || !body.trim()) return;
     const msg: ChatMessage = { id: "chat" + Date.now(), fromId: currentUser.id, toId, team, body, createdAt: new Date().toISOString(), read: false };
     setState((s) => ({ ...s, chats: [...s.chats, msg] }));
-    // Persist to Supabase so other members see it, then refresh from DB.
     insertChatMessage({ fromId: currentUser.id, toId, team, body })
       .then(async () => {
         const chats = await loadChats();
@@ -621,6 +620,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       .catch((error) => console.error("Chat send failed", error));
     _log(currentUser, `Sent chat message`, "comms", toId || team);
   };
+
   const deleteChat: AppState["deleteChat"] = (id) => {
     setState((s) => ({ ...s, chats: s.chats.filter((c) => c.id !== id) }));
     deleteChatMessage(id)
@@ -630,6 +630,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       })
       .catch((error) => console.error("Chat delete failed", error));
   };
+
   const clearChat: AppState["clearChat"] = ({ team, otherId }) => {
     if (!currentUser) return;
     setState((s) => ({
@@ -653,6 +654,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setState((s) => ({ ...s, tasks: [...s.tasks, newT] }));
     _log(currentUser, `Created task "${newT.title}"`, "tasks", newT.id);
   };
+
   const updateTask: AppState["updateTask"] = (id, patch) => {
     let snap: Task | null = null;
     setState((s) => {
@@ -664,7 +666,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
         }
         return t;
       });
-      // points logic on completion
       let users = s.users;
       if (patch.status === "Completed" && snap) {
         const award = 10;
@@ -684,6 +685,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     });
     _log(currentUser, `Updated task`, "tasks", id);
   };
+
   const deleteTask: AppState["deleteTask"] = (id) => {
     setState((s) => ({ ...s, tasks: s.tasks.filter((t) => t.id !== id) }));
     _log(currentUser, `Deleted task`, "tasks", id);
@@ -698,6 +700,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     insertEvent(newE).then(refreshEvents).catch((err) => console.error("Event create failed", err));
     _log(currentUser, `Created event "${newE.title}"`, "events", newE.id);
   };
+
   const updateEvent: AppState["updateEvent"] = (id, patch) => {
     let updated: Event | undefined;
     setState((s) => {
@@ -707,11 +710,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (updated) updateEventRow(id, updated).then(refreshEvents).catch((err) => console.error("Event update failed", err));
     _log(currentUser, `Updated event`, "events", id);
   };
+
   const deleteEvent: AppState["deleteEvent"] = (id) => {
     setState((s) => ({ ...s, events: s.events.filter((e) => e.id !== id) }));
     deleteEventRow(id).then(refreshEvents).catch((err) => console.error("Event delete failed", err));
     _log(currentUser, `Deleted event`, "events", id);
   };
+
   const duplicateEvent: AppState["duplicateEvent"] = (id) => {
     const e = state.events.find((x) => x.id === id);
     if (!e) return;
@@ -720,6 +725,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     insertEvent(dup).then(refreshEvents).catch((err) => console.error("Event duplicate failed", err));
     _log(currentUser, `Duplicated event`, "events", id);
   };
+
   const archiveEvent: AppState["archiveEvent"] = (id) => {
     let updated: Event | undefined;
     setState((s) => {
@@ -736,6 +742,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     insertFinance(newF).then(refreshFinance).catch((err) => console.error("Finance create failed", err));
     _log(currentUser, `Added finance entry: ${f.type} PKR ${f.amount}`, "finance");
   };
+
   const updateFinance: AppState["updateFinance"] = (id, patch) => {
     let updated: FinanceEntry | undefined;
     setState((s) => {
@@ -745,6 +752,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (updated) updateFinanceRow(id, updated).then(refreshFinance).catch((err) => console.error("Finance update failed", err));
     _log(currentUser, `Edited finance entry`, "finance", id);
   };
+
   const deleteFinance: AppState["deleteFinance"] = (id) => {
     setState((s) => ({ ...s, finance: s.finance.filter((f) => f.id !== id) }));
     deleteFinanceRow(id).then(refreshFinance).catch((err) => console.error("Finance delete failed", err));
@@ -755,10 +763,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setState((s) => ({ ...s, outreach: [...s.outreach, { ...o, id: "o" + Date.now() }] }));
     _log(currentUser, `Added outreach contact: ${o.organization}`, "outreach");
   };
+
   const updateOutreach: AppState["updateOutreach"] = (id, patch) => {
     setState((s) => ({ ...s, outreach: s.outreach.map((o) => (o.id === id ? { ...o, ...patch } : o)) }));
     _log(currentUser, `Updated outreach contact`, "outreach", id);
   };
+
   const deleteOutreach: AppState["deleteOutreach"] = (id) => {
     setState((s) => ({ ...s, outreach: s.outreach.filter((o) => o.id !== id) }));
     _log(currentUser, `Deleted outreach contact`, "outreach", id);
@@ -766,6 +776,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const addApplication: AppState["addApplication"] = (a) =>
     setState((s) => ({ ...s, applications: [...s.applications, { ...a, id: "a" + Date.now() }] }));
+
   const updateApplication: AppState["updateApplication"] = (id, patch) =>
     setState((s) => ({
       ...s,
@@ -780,10 +791,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
         ...s.notifications,
       ],
     }));
+
   const markAllRead = () =>
     setState((s) => ({ ...s, notifications: s.notifications.map((n) => ({ ...n, read: true })) }));
 
-  // attendance with dedup per day & event scope
   const markAttendance: AppState["markAttendance"] = (userId, method, status, eventId, date) => {
     let duplicate = false;
     const effectiveDate = date || new Date().toISOString();
@@ -793,7 +804,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const exists = s.attendance.find(
         (a) => a.userId === userId && new Date(a.date).toDateString() === dateStr && (eventId ? a.eventId === eventId : !a.eventId)
       );
-      // QR duplicates blocked, Manual/Event can update existing status for edits/backdated changes.
       let allRecs = s.attendance;
       if (exists) {
         if (method === "QR") {
@@ -834,8 +844,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return { ok: !duplicate, duplicate };
   };
 
-  // Direct edit of any existing attendance record (any past date, any field).
-  // Unlike markAttendance, this never blocks on duplicates — it's a straight admin override.
   const updateAttendanceRecord: AppState["updateAttendanceRecord"] = (id, patch) => {
     let updatedRec: AttendanceRecord | null = null;
     setState((s) => {
@@ -865,13 +873,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  // Deletes both locally (instant UI feedback) and from Supabase (so it's actually
-  // gone, not just hidden). Previously this only removed it from local state and
-  // stuffed the id into an in-memory suppress set — that set resets on page refresh,
-  // so the next live-sync poll would re-fetch the row from Supabase and it would
-  // "come back." deleteAttendanceRow() below is the real fix.
   const deleteAttendanceRecord: AppState["deleteAttendanceRecord"] = (id) => {
-    deletedAttendanceIdsRef.current.add(id); // race-guard until the delete confirms
+    deletedAttendanceIdsRef.current.add(id);
     setState((s) => {
       const target = s.attendance.find((a) => a.id === id);
       const allRecs = s.attendance.filter((a) => a.id !== id);
