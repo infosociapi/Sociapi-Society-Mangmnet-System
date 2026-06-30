@@ -537,6 +537,44 @@ export async function insertChatMessage(msg: { fromId: string; toId?: string; te
   if (error) throw error;
 }
 
+/* ===================== MEMBERS (direct CRUD) ===================== */
+function memberRow(u: Partial<User>, depId: string | null) {
+  return {
+    username: u.username,
+    member_id: u.memberId,
+    special_number: u.specialNumber,
+    name: u.name,
+    email: u.email,
+    phone: u.phone || null,
+    profile_photo_url: u.photoUrl || null,
+    role: u.role,
+    department_id: depId,
+    position: u.position,
+    status: u.status || "Active",
+    points: u.points ?? 0,
+    attendance: u.attendance ?? 0,
+    performance_score: u.performanceScore ?? 0,
+    join_date: u.joinDate ? u.joinDate.slice(0, 10) : new Date().toISOString().slice(0, 10),
+    created_by: isUuid(u.createdBy) ? u.createdBy : null,
+    created_at: new Date().toISOString(),
+  };
+}
+
+// Inserts a brand new member row into Supabase. Without this, the "Add Member"
+// form only pushed the new person into local React state — nothing was ever
+// written to the members table, so the row never existed in the database and
+// the next refresh (or the next teammate's screen) would not show them.
+export async function insertMember(u: Partial<User>, depId: string | null): Promise<string | null> {
+  if (!isSupabaseConfigured) return null;
+  const { data, error } = await supabase
+    .from("members")
+    .insert(memberRow(u, depId))
+    .select("id")
+    .maybeSingle();
+  if (error) throw error;
+  return data?.id || null;
+}
+
 export async function deleteMemberRow(id: string) {
   if (!isSupabaseConfigured) return;
   const { error } = await supabase.from("members").delete().eq("id", id);
