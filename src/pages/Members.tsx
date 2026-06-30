@@ -4,25 +4,24 @@ import { useApp } from "../context/AppContext";
 import type { Role, User } from "../types";
 import { Edit2, Plus, Search, Trash2, UserCircle2, Award, Activity, Mail, Phone, Briefcase } from "lucide-react";
 
-// Simplified roles for all departments
+// Complete role mapping for all 16 departments
 const departmentRoles: Record<string, Role[]> = {
-  "HR Manager": ["HR Manager", "Vice President", "Lead", "Member"],
-  "Outreach Member": ["Lead", "Vice President", "Member"],
+  "HR Manager": ["HR Manager", "Vice President", "Lead", "Co-Lead", "Member"],
+  "Outreach Member": ["Lead", "Vice President", "Co-Lead", "Member"],
   "Video Editor": ["Lead", "Co-Lead", "Member"],
-  "Women Lead": ["Lead", "Vice President", "Member"],
-  "Decor Lead": ["Lead", "Co-Lead", "Member"],
-  "Decor": ["Lead", "Member"],
-  "Graphic": ["Lead", "Member"],
-  "General Secretary": ["Lead", "Vice President", "Member"],
-  "Project Manager": ["Lead", "Vice President", "Member"],
-  "Event Manager": ["Lead", "Co-Lead", "Member"],
-  "Technical Lead": ["Lead", "Vice President", "Member"],
-  "Media": ["Lead", "Member"],
-  "Graphic Designers Lead": ["Lead", "Vice President", "Member"],
-  "Organizer": ["Lead", "Member"],
-  "Graphic Designer": ["Lead", "Member"],
-  "Leadership": ["Lead", "Vice President", "Member"],
-  "General": ["Lead", "Co-Lead", "Member", "HR Manager"],
+  "Women Lead": ["Lead", "Vice President", "Co-Lead", "Member"],
+  "Decor Lead": ["Lead", "Vice President", "Co-Lead", "Member"],
+  "Decor": ["Lead", "Co-Lead", "Member"],
+  "Graphic": ["Lead", "Co-Lead", "Member"],
+  "General Secretary": ["Lead", "Vice President", "Co-Lead", "Member"],
+  "Project Manager": ["Lead", "Vice President", "Co-Lead", "Member"],
+  "Event Manager": ["Lead", "Vice President", "Co-Lead", "Member"],
+  "Technical Lead": ["Lead", "Vice President", "Co-Lead", "Member"],
+  "Media": ["Lead", "Co-Lead", "Member"],
+  "Graphic Designers Lead": ["Lead", "Vice President", "Co-Lead", "Member"],
+  "Organizer": ["Lead", "Co-Lead", "Member"],
+  "Graphic Designer": ["Lead", "Co-Lead", "Member"],
+  "Leadership": ["Lead", "Vice President", "Co-Lead", "Member"],
 };
 
 const allRoles: Role[] = [
@@ -285,15 +284,18 @@ function MemberFormModal({
   onSave: (u: Partial<User>) => void;
 }) {
   type MemberForm = Partial<User> & { temporaryPassword?: string };
+  const defaultDept = departments[0] || "General Secretary";
+  const defaultRole = (departmentRoles[defaultDept] || ["Member"])[0];
+  
   const [form, setForm] = useState<MemberForm>(
     editing || {
       name: "",
       username: "",
       email: "",
       temporaryPassword: "",
-      role: "General Member",
-      position: "Member",
-      department: departments[0] || "General",
+      role: defaultRole,
+      position: defaultDept,
+      department: defaultDept,
       specialNumber: "",
       skills: [],
       points: 0,
@@ -312,14 +314,16 @@ function MemberFormModal({
     if (editing) {
       setForm(editing);
     } else {
+      const dept = departments[0] || "General Secretary";
+      const role = (departmentRoles[dept] || ["Member"])[0];
       setForm({
         name: "",
         username: "",
         email: "",
         temporaryPassword: "",
-        role: "General Member",
-        position: "Member",
-        department: departments[0] || "General",
+        role,
+        position: dept,
+        department: dept,
         specialNumber: "",
         skills: [],
         points: 0,
