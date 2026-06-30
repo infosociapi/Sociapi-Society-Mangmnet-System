@@ -41,6 +41,7 @@ import {
   insertDepartment,
   insertEvent,
   insertFinance,
+  insertMember,
   loadAttendance,
   loadChats,
   loadDepartments,
@@ -483,62 +484,106 @@ export function AppProvider({ children }: { children: ReactNode }) {
   );
 
   // === CRUD ===
-  const addUser: AppState["addUser"] = (u) =>
-    setState((s) => {
-      const num = s.users.length + 1;
-      const newUser: User = {
-        ...u,
-        id: "u" + Date.now(),
-        username: u.username || u.email.split("@")[0],
-        memberId: `SOC-2026-${String(num).padStart(4, "0")}`,
-        createdBy: currentUser?.id,
-        createdAt: new Date().toISOString(),
-        passwordResetHistory: [],
-        points: 0,
-        attendance: 0,
-        performanceScore: 0,
-        status: "Active",
-        certificates: u.certificates || [],
-        activity: u.activity?.length ? u.activity : [{ date: new Date().toISOString(), action: "Added to Sociapi Nexus" }],
-      };
-      if (isSupabaseConfigured) {
-        const tempPassword = (u as any).temporaryPassword;
-        if (!tempPassword) {
-          setTimeout(() => {
+  // This now actually writes the new member to the Supabase "members" table.
+  // The old version only ever called callSupabaseAdmin("create", ...), which
+  // creates a Supabase Auth login (email + password) — that is a totally
+  // separate system from the members table. No Auth call ever inserted a row
+  // into members, so the new person never existed in the database, even
+  // though they appeared instantly in your local screen.
+  //
+  // We also generate a temporary local id first so the UI updates instantly,
+  // then swap it for the real Supabase UUID once the insert finishes. This
+  // matters because the auto-save effect (saveErpState) only bulk-upserts
+  // users whose id is a real UUID — a fake id like "u1719760000" was being
+  // silently skipped by that safety net too, which is the second reason the
+  // member was vanishing.
+  const addUser: AppState["addUser"] = (u) => {
+    const num = state.users.length + 1;
+    const tempId = "u" + Date.now();
+    const newUser: User = {
+      ...u,
+      id: tempId,
+      username: u.username || u.email.split("@")[0],
+      memberId: `SOC-2026-${String(num).padStart(4, "0")}`,
+      createdBy: currentUser?.id,
+      createdAt: new Date().toISOString(),
+      passwordResetHistory: [],
+      points: 0,
+      attendance: 0,
+      performanceScore: 0,
+      status: "Active",
+      certificates: u.certificates || [],
+      activity: u.activity?.length ? u.activity : [{ date: new Date().toISOString(), action: "Added to Sociapi Nexus" }],
+    };
+
+    setState((s) => ({ ...s, users: [...s.users, newUser] }));
+
+    if (isSupabaseConfigured) {
+      const depId = state.departments.find((d) => d.name === newUser.department)?.id || null;
+
+      insertMember(newUser, depId)
+        .then((realId) => {
+          if (realId) {
+            setState((s) => ({
+              ...s,
+              users: s.users.map((x) => (x.id === tempId ? { ...x, id: realId } : x)),
+            }));
+          } else {
             addNotification({
-              title: "Member added without login",
-              body: `${newUser.name} was added, but no temporary password was provided, so no Supabase Auth login was created.`,
+              title: "Member not saved to database",
+              body: `${newUser.name} was added on screen, but the database insert returned no id. Check Supabase RLS policies on the members table.`,
               channel: "In-App",
-              type: "warning",
+              type: "alert",
             });
-          }, 0);
-        } else {
-          callSupabaseAdmin("create", {
-            email: newUser.email,
-            password: tempPassword,
-            metadata: { username: newUser.username, role: newUser.role, memberId: newUser.memberId },
+          }
+        })
+        .catch((error) => {
+          console.error("Member insert failed", error);
+          addNotification({
+            title: "Member not saved to database",
+            body: `${newUser.name} was added on screen, but saving to Supabase failed: ${error instanceof Error ? error.message : "Unknown error"}`,
+            channel: "In-App",
+            type: "alert",
+          });
+        });
+
+      const tempPassword = (u as any).temporaryPassword;
+      if (!tempPassword) {
+        setTimeout(() => {
+          addNotification({
+            title: "Member added without login",
+            body: `${newUser.name} was added, but no temporary password was provided, so no Supabase Auth login was created.`,
+            channel: "In-App",
+            type: "warning",
+          });
+        }, 0);
+      } else {
+        callSupabaseAdmin("create", {
+          email: newUser.email,
+          password: tempPassword,
+          metadata: { username: newUser.username, role: newUser.role, memberId: newUser.memberId },
+        })
+          .then(() => {
+            addNotification({
+              title: "Login created",
+              body: `Supabase Auth login created for ${newUser.email}. They can sign in with the temporary password.`,
+              channel: "In-App",
+              type: "success",
+            });
           })
-            .then(() => {
-              addNotification({
-                title: "Login created",
-                body: `Supabase Auth login created for ${newUser.email}. They can sign in with the temporary password.`,
-                channel: "In-App",
-                type: "success",
-              });
-            })
-            .catch((error) => {
-              addNotification({
-                title: "Supabase Auth create FAILED",
-                body: `${error instanceof Error ? error.message : "Unknown error"}. Note: the admin function only runs on Vercel deployment, not on local 'npm run dev'.`,
-                channel: "In-App",
-                type: "alert",
-              });
+          .catch((error) => {
+            addNotification({
+              title: "Supabase Auth create FAILED",
+              body: `${error instanceof Error ? error.message : "Unknown error"}. Note: the admin function only runs on Vercel deployment, not on local 'npm run dev'.`,
+              channel: "In-App",
+              type: "alert",
             });
-        }
+          });
       }
-      _log(currentUser, `Added member ${newUser.name}`, "members", newUser.id);
-      return { ...s, users: [...s.users, newUser] };
-    });
+    }
+
+    _log(currentUser, `Added member ${newUser.name}`, "members", newUser.id);
+  };
 
   const updateUser: AppState["updateUser"] = (id, patch) => {
     const depId = state.departments.find((d) => d.name === patch.department)?.id || null;
