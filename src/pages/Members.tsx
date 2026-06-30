@@ -25,7 +25,6 @@ const departmentRoles: Record<string, Role[]> = {
 };
 
 const allRoles: Role[] = [
-  "Super Admin",
   "Lead",
   "Co-Lead",
   "Vice President",
