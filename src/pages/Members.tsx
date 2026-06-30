@@ -4,39 +4,34 @@ import { useApp } from "../context/AppContext";
 import type { Role, User } from "../types";
 import { Edit2, Plus, Search, Trash2, UserCircle2, Award, Activity, Mail, Phone, Briefcase } from "lucide-react";
 
-// Common roles for each department
+// Simplified roles for all departments
 const departmentRoles: Record<string, Role[]> = {
-  "Founder & President": ["Founder", "Co-Founder", "Executive"],
-  "President": ["Executive", "Founder"],
-  "HR Manager": ["HR Manager", "Executive", "General Member"],
-  "Outreach Member": ["Outreach Manager", "Executive", "General Member"],
-  "Video Editor": ["Event Manager", "General Member"],
-  "Women Lead": ["Executive", "Department Lead", "General Member"],
-  "Decor Lead": ["Department Lead", "Event Manager", "General Member"],
-  "Decor": ["Event Manager", "General Member"],
-  "Graphic": ["Event Manager", "General Member"],
-  "Graphics": ["Event Manager", "General Member"],
-  "General Secretary": ["Executive", "HR Manager", "General Member"],
-  "Project Manager": ["Department Lead", "Event Manager", "General Member"],
-  "Event Manager": ["Event Manager", "Department Lead", "General Member"],
-  "Technical Lead": ["Department Lead", "Event Manager", "General Member"],
-  "Media Graphic Designers": ["Event Manager", "General Member"],
-  "Organizer": ["Event Manager", "General Member"],
-  "Graphic Designer": ["Event Manager", "General Member"],
-  "General": ["General Member", "Event Manager", "Executive"],
+  "HR Manager": ["HR Manager", "Vice President", "Lead", "Member"],
+  "Outreach Member": ["Lead", "Vice President", "Member"],
+  "Video Editor": ["Lead", "Co-Lead", "Member"],
+  "Women Lead": ["Lead", "Vice President", "Member"],
+  "Decor Lead": ["Lead", "Co-Lead", "Member"],
+  "Decor": ["Lead", "Member"],
+  "Graphic": ["Lead", "Member"],
+  "General Secretary": ["Lead", "Vice President", "Member"],
+  "Project Manager": ["Lead", "Vice President", "Member"],
+  "Event Manager": ["Lead", "Co-Lead", "Member"],
+  "Technical Lead": ["Lead", "Vice President", "Member"],
+  "Media": ["Lead", "Member"],
+  "Graphic Designers Lead": ["Lead", "Vice President", "Member"],
+  "Organizer": ["Lead", "Member"],
+  "Graphic Designer": ["Lead", "Member"],
+  "Leadership": ["Lead", "Vice President", "Member"],
+  "General": ["Lead", "Co-Lead", "Member", "HR Manager"],
 };
 
 const allRoles: Role[] = [
   "Super Admin",
-  "Founder",
-  "Co-Founder",
-  "Executive",
+  "Lead",
+  "Co-Lead",
+  "Vice President",
   "HR Manager",
-  "Department Lead",
-  "Finance Manager",
-  "Outreach Manager",
-  "Event Manager",
-  "General Member",
+  "Member",
 ];
 
 export default function Members() {

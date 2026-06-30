@@ -1,14 +1,10 @@
 export type Role =
   | "Super Admin"
-  | "Founder"
-  | "Co-Founder"
-  | "Executive"
+  | "Lead"
+  | "Co-Lead"
+  | "Vice President"
   | "HR Manager"
-  | "Department Lead"
-  | "Finance Manager"
-  | "Outreach Manager"
-  | "Event Manager"
-  | "General Member";
+  | "Member";
 
 export interface User {
   id: string;
