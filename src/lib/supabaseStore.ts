@@ -231,15 +231,6 @@ export async function loadErpState(): Promise<ErpStateSnapshot | null> {
     supabase.from("task_assignees").select("*"),
     supabase.from("task_submissions").select("*")
   ]);
-  // CRITICAL FIX: this used to throw on the FIRST error found among any of
-  // these 13 independent table reads, discarding the whole snapshot —
-  // including members, which had loaded successfully in the very same
-  // call. One bad RLS policy on e.g. `audit_logs` or `hr_applications` was
-  // enough to make the entire app fall back to hardcoded 3-person seed
-  // data, with the failure logged nowhere. Now we log each failing table
-  // individually and only hard-fail if `members` itself (the table this
-  // bug report is about) couldn't be read — every other table degrades
-  // gracefully to an empty list instead of blanking the whole app.
   const named: [string, { data: any; error: any }][] = [
     ["members", members], ["departments", departments], ["events", events],
     ["finance_entries", finance], ["outreach", outreach], ["hr_applications", applications],
@@ -488,7 +479,6 @@ export async function upsertAttendanceRecord(rec: AttendanceRecord) {
     attendance_date: rec.date.slice(0, 10),
     created_at: rec.date,
   };
-  // update existing for same member/date/event; else insert
   const { data: existing } = await supabase
     .from("attendance")
     .select("id")
@@ -505,10 +495,6 @@ export async function upsertAttendanceRecord(rec: AttendanceRecord) {
   }
 }
 
-// Deletes a single attendance record from Supabase. Without this, deleting a
-// record only removed it from local React state — the row stayed in the
-// "attendance" table, so the next live-sync poll (every 6s) would re-fetch it
-// and it would reappear after a page refresh.
 export async function deleteAttendanceRow(id: string) {
   if (!isSupabaseConfigured || !isUuid(id)) return;
   const { error } = await supabase.from("attendance").delete().eq("id", id);
@@ -542,7 +528,6 @@ export async function insertChatMessage(msg: { fromId: string; toId?: string; te
     body: msg.body,
   };
   if (!row.from_member_id) {
-    // Resolve sender member row by current session if id is not a uuid.
     const { data } = await supabase.auth.getUser();
     const email = data.user?.email;
     if (email) {
@@ -577,10 +562,6 @@ function memberRow(u: Partial<User>, depId: string | null) {
   };
 }
 
-// Inserts a brand new member row into Supabase. Without this, the "Add Member"
-// form only pushed the new person into local React state — nothing was ever
-// written to the members table, so the row never existed in the database and
-// the next refresh (or the next teammate's screen) would not show them.
 export async function insertMember(u: Partial<User>, depId: string | null): Promise<string | null> {
   if (!isSupabaseConfigured) return null;
   const { data, error } = await supabase
@@ -612,7 +593,6 @@ export async function clearChatThread(opts: { team?: string; a?: string; b?: str
     return;
   }
   if (opts.a && opts.b) {
-    // delete both directions of a DM thread
     await supabase.from("chat").delete().eq("from_member_id", opts.a).eq("to_member_id", opts.b);
     await supabase.from("chat").delete().eq("from_member_id", opts.b).eq("to_member_id", opts.a);
   }
@@ -639,14 +619,6 @@ export async function loadMembers(): Promise<User[]> {
     supabase.from("members").select("*"),
     supabase.from("departments").select("id,name"),
   ]);
-  // CRITICAL FIX: this function used to destructure only `data` and ignore
-  // `error` entirely. If Row Level Security denied the SELECT (or any other
-  // permission/network failure occurred), Supabase returns `{ data: null,
-  // error }` — the error was silently dropped, `data` defaulted to `null`,
-  // and this returned an empty array. Calling code then treated "fetch
-  // failed" identically to "table is genuinely empty" and fell back to
-  // stale local state, every 6 seconds, forever, with no error ever logged
-  // anywhere. That is why members appeared to "disappear" with zero trace.
   if (membersRes.error) {
     console.error("loadMembers: failed to read members table (check RLS SELECT policy / project keys):", membersRes.error);
     throw membersRes.error;
@@ -732,27 +704,41 @@ export async function ensureMember(opts: {
     return mapMemberRow({ ...existing, last_login: new Date().toISOString() }, departments || []);
   }
 
-  // Generate a unique member_id / special_number based on current count.
-  const { count } = await supabase.from("members").select("*", { count: "exact", head: true });
-  const next = (count || 0) + 1;
-  const suffix = Math.random().toString(36).slice(2, 5).toUpperCase();
-  const row = {
-    username: opts.username || opts.email.split("@")[0],
-    member_id: `SOC-2026-${String(next).padStart(4, "0")}`,
-    special_number: opts.specialNumber || `SM_${26200 + next}_${suffix}`,
-    name: opts.name || opts.email.split("@")[0],
-    email: opts.email,
-    role: opts.role || "General Member",
-    position: "Member",
-    status: "Active",
-    attendance: 0,
-    points: 0,
-    performance_score: 0,
-    join_date: new Date().toISOString().slice(0, 10),
-    created_at: new Date().toISOString(),
-    last_login: new Date().toISOString(),
+  // Generate a collision-proof member_id / special_number. The previous
+  // version used a `count`-based sequential number ("SOC-2026-000N"), which
+  // is racy: two signups/logins happening close together (or a count that
+  // went out of sync after a row was deleted) could both compute the same
+  // `next` value and both try to insert the SAME member_id. The second
+  // insert then hits the "members_member_id_key" unique constraint and
+  // fails with a 409 Conflict. Timestamp + random suffix removes the need
+  // to read a count at all, so it can't collide. We also retry once on a
+  // unique-constraint error as a belt-and-suspenders safety net.
+  const genRow = () => {
+    const stamp = Date.now().toString(36).toUpperCase();
+    const suffix = Math.random().toString(36).slice(2, 6).toUpperCase();
+    return {
+      username: opts.username || opts.email.split("@")[0],
+      member_id: `SOC-2026-${stamp}${suffix}`,
+      special_number: opts.specialNumber || `SM_${stamp}${suffix}`,
+      name: opts.name || opts.email.split("@")[0],
+      email: opts.email,
+      role: opts.role || "General Member",
+      position: "Member",
+      status: "Active",
+      attendance: 0,
+      points: 0,
+      performance_score: 0,
+      join_date: new Date().toISOString().slice(0, 10),
+      created_at: new Date().toISOString(),
+      last_login: new Date().toISOString(),
+    };
   };
-  const { data: inserted, error } = await supabase.from("members").insert(row).select("*").maybeSingle();
+
+  let { data: inserted, error } = await supabase.from("members").insert(genRow()).select("*").maybeSingle();
+  if (error?.code === "23505") {
+    // Extremely unlikely double-collision — regenerate and retry once.
+    ({ data: inserted, error } = await supabase.from("members").insert(genRow()).select("*").maybeSingle());
+  }
   if (error) {
     console.error("ensureMember insert failed", error);
     return null;
