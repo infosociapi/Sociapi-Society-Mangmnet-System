@@ -25,6 +25,7 @@ const departmentRoles: Record<string, Role[]> = {
 };
 
 const allRoles: Role[] = [
+  "Super Admin",
   "Lead",
   "Co-Lead",
   "Vice President",
@@ -42,7 +43,7 @@ export default function Members() {
   const [viewing, setViewing] = useState<User | null>(null);
   const [open, setOpen] = useState(false);
 
-  const deptNames = useMemo(() => ["All", ...Array.from(new Set(users.map((u) => u.department))).sort()], [users]);
+  const deptNames = ["All", "HR Manager", "Outreach Member", "Video Editor", "Women Lead", "Decor Lead", "Decor", "Graphic", "General Secretary", "Project Manager", "Event Manager", "Technical Lead", "Media", "Graphic Designers Lead", "Organizer", "Graphic Designer", "Leadership"];
 
   const filtered = useMemo(() => {
     return users.filter((u) => {
