@@ -8,14 +8,29 @@ export default function Departments() {
   const canManage = hasPermission("manage_settings") || hasPermission("manage_members");
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<any>(null);
-  const [form, setForm] = useState({ name: "", description: "", leadId: "", coLeadId: "" });
+  const [form, setForm] = useState({ name: "", description: "", leadId: "", coLeadId: "", memberIds: [] as string[] });
 
-  const openNew = () => { setEditing(null); setForm({ name: "", description: "", leadId: "", coLeadId: "" }); setOpen(true); };
-  const openEdit = (d: any) => { setEditing(d); setForm({ name: d.name, description: d.description, leadId: d.leadId || "", coLeadId: d.coLeadId || "" }); setOpen(true); };
+  const openNew = () => { setEditing(null); setForm({ name: "", description: "", leadId: "", coLeadId: "", memberIds: [] }); setOpen(true); };
+  const openEdit = (d: any) => { 
+    const deptMembers = users.filter((u) => u.department === d.name).map((u) => u.id);
+    setEditing(d); 
+    setForm({ name: d.name, description: d.description, leadId: d.leadId || "", coLeadId: d.coLeadId || "", memberIds: deptMembers }); 
+    setOpen(true); 
+  };
   const save = () => {
     if (!form.name) return;
-    if (editing) updateDepartment(editing.id, form);
-    else addDepartment(form.name, form.description, form.leadId || undefined, form.coLeadId || undefined);
+    if (editing) {
+      updateDepartment(editing.id, form);
+      // Update user departments
+      form.memberIds.forEach((userId) => {
+        const user = users.find((u) => u.id === userId);
+        if (user && user.department !== form.name) {
+          updateUser(userId, { ...user, department: form.name });
+        }
+      });
+    } else {
+      addDepartment(form.name, form.description, form.leadId || undefined, form.coLeadId || undefined);
+    }
     setOpen(false);
   };
 
@@ -119,7 +134,7 @@ export default function Departments() {
               {regularMembers.length > 0 && (
                 <div className="pt-2 border-t border-slate-200 dark:border-white/10">
                   <p className="text-xs uppercase tracking-wider text-slate-500 font-semibold mb-2">👤 Members ({regularMembers.length})</p>
-                  <div className="space-y-1 max-h-48 overflow-y-auto">
+                  <div className="space-y-1 max-h-96 overflow-y-auto">
                     {regularMembers.map((u) => (
                       <div key={u.id} className="flex items-center gap-2 p-1.5 rounded-lg hover:bg-slate-100/40 dark:hover:bg-white/5 text-xs">
                         <Avatar name={u.name} gradient={u.avatar} size={24} />
@@ -160,6 +175,32 @@ export default function Departments() {
               <option value="">No co-lead assigned</option>
               {users.map((u) => <option key={u.id} value={u.id}>{u.name} ({u.role})</option>)}
             </Select>
+          </div>
+          <div>
+            <Label>Department Members</Label>
+            <div className="border border-slate-300 dark:border-slate-600 rounded-lg p-3 max-h-60 overflow-y-auto space-y-2">
+              {users.map((u) => (
+                <label key={u.id} className="flex items-center gap-2 cursor-pointer hover:bg-slate-100/50 dark:hover:bg-white/5 p-2 rounded">
+                  <input
+                    type="checkbox"
+                    checked={form.memberIds.includes(u.id)}
+                    onChange={(e) => {
+                      if (e.target.checked) {
+                        setForm({ ...form, memberIds: [...form.memberIds, u.id] });
+                      } else {
+                        setForm({ ...form, memberIds: form.memberIds.filter((id) => id !== u.id) });
+                      }
+                    }}
+                    className="rounded"
+                  />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium truncate">{u.name}</p>
+                    <p className="text-xs text-slate-500 truncate">{u.role}</p>
+                  </div>
+                </label>
+              ))}
+            </div>
+            <p className="text-xs text-slate-500 mt-1">{form.memberIds.length} selected</p>
           </div>
         </div>
         <div className="flex justify-end gap-2 mt-6"><Button variant="ghost" onClick={() => setOpen(false)}>Cancel</Button><Button onClick={save}>Save</Button></div>
