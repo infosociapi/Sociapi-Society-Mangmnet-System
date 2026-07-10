@@ -198,13 +198,13 @@ const defaultDepartments: Department[] = [
   { name: "Organizing", lead: "Organizer", roles: ["Organizer", "Organizing Member"] },
   { name: "Secretariat", lead: "General Secretary", roles: ["General Secretary", "Secretary Member"] },
   { name: "Logistics", lead: "Logistics Lead", roles: ["Logistics Lead", "Logistics Member"] },
-].map((d, i) => ({ 
-  id: `d${i + 1}`, 
-  name: d.name, 
-  description: `${d.name} department`, 
+].map((d, i) => ({
+  id: `d${i + 1}`,
+  name: d.name,
+  description: `${d.name} department`,
   leadId: undefined,
   coLeadId: undefined,
-  createdAt: new Date().toISOString() 
+  createdAt: new Date().toISOString()
 }));
 
 function defaultState(): PersistShape {
@@ -284,13 +284,27 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [state, hydrated, usingFallbackData]);
 
   const deletedAttendanceIdsRef = useRef<Set<string>>(new Set());
-  const pendingEventMutationRef = useRef(false);
+
+  // Counter, not boolean: addEvent/updateEvent/deleteEvent/duplicateEvent/
+  // archiveEvent can overlap in flight (e.g. two quick edits, or an add
+  // right after a delete). A boolean gets clobbered — the second call
+  // finishing and setting it back to `false` would unblock the live-sync
+  // tick() even while the FIRST call is still mid-flight, letting a stale
+  // fetch overwrite the still-pending change. A counter only reads as
+  // "clear" once every in-flight mutation has actually finished.
+  const pendingEventMutationRef = useRef(0);
+  const beginEventMutation = () => {
+    pendingEventMutationRef.current += 1;
+  };
+  const endEventMutation = () => {
+    pendingEventMutationRef.current = Math.max(0, pendingEventMutationRef.current - 1);
+  };
 
   useEffect(() => {
     if (!hydrated || !isSupabaseConfigured || !currentUser) return;
     let active = true;
     const tick = async () => {
-      if (pendingEventMutationRef.current) return;
+      if (pendingEventMutationRef.current > 0) return;
       try {
         const [members, chats, events, finance, departments, attendance, tasks] = await Promise.all([
           loadMembers(),
@@ -305,6 +319,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
         const filteredAttendance = deletedAttendanceIdsRef.current.size
           ? attendance.filter((a: AttendanceRecord) => !deletedAttendanceIdsRef.current.has(a.id))
           : attendance;
+        // Re-check AFTER the fetch, not just before it started. The fetch
+        // above is async and takes real time; if an addEvent/updateEvent/
+        // deleteEvent/duplicateEvent/archiveEvent call started AFTER this
+        // tick's loadEvents() request went out but BEFORE it resolved, the
+        // `events` array we just fetched is a stale snapshot that doesn't
+        // include that change yet. Applying it would overwrite (and appear
+        // to delete) whatever the user just did, until the next 6s tick
+        // catches up. Every other field below is fine to apply as-is —
+        // only `events` needs this guard.
+        const eventsAreStale = pendingEventMutationRef.current > 0;
         // loadMembers() now throws instead of silently returning [] on a
         // read failure (see supabaseStore.ts), so reaching this line means
         // the fetch genuinely succeeded — including the case where there
@@ -315,7 +339,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           ...s,
           users: members,
           chats,
-          events: events.length ? events : s.events,
+          events: eventsAreStale ? s.events : (events.length ? events : s.events),
           finance,
           departments: departments.length ? departments : s.departments,
           attendance: filteredAttendance,
@@ -682,13 +706,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
   };
 
   const addDepartment: AppState["addDepartment"] = (name, description, leadId, coLeadId) => {
-    const dep: Department = { 
-      id: "d" + Date.now(), 
-      name, 
-      description, 
-      leadId, 
+    const dep: Department = {
+      id: "d" + Date.now(),
+      name,
+      description,
+      leadId,
       coLeadId,
-      createdAt: new Date().toISOString() 
+      createdAt: new Date().toISOString()
     };
     setState((s) => ({ ...s, departments: [...s.departments, dep] }));
     insertDepartment(name, description, leadId, coLeadId).then(async () => {
@@ -855,34 +879,42 @@ export function AppProvider({ children }: { children: ReactNode }) {
     _log(currentUser, `Deleted task`, "tasks", id);
   };
 
-  const refreshEvents = () => loadEvents().then((events) => setState((s) => ({ ...s, events: events.length ? events : s.events }))).catch((e) => console.error(e));
+  const refreshEvents = () =>
+    loadEvents()
+      .then((events) => {
+        // Same staleness guard as tick(): if another event mutation started
+        // after this refresh's request went out, don't let this response
+        // (which may predate that mutation) stomp on it.
+        if (pendingEventMutationRef.current > 0) return;
+        setState((s) => ({ ...s, events: events.length ? events : s.events }));
+      })
+      .catch((e) => console.error(e));
   const refreshFinance = () => loadFinance().then((finance) => setState((s) => ({ ...s, finance }))).catch((e) => console.error(e));
 
   const addEvent: AppState["addEvent"] = (e) => {
     const newE: Event = { ...e, id: "e" + Date.now() };
-    pendingEventMutationRef.current = true;
+    beginEventMutation();
     setState((s) => ({ ...s, events: [...s.events, newE] }));
     if (isSupabaseConfigured) {
       insertEvent(newE)
         .then(async (realId) => {
-          pendingEventMutationRef.current = false;
           if (!realId) return;
           const events = await loadEvents().catch(() => null);
           if (events) setState((s) => ({ ...s, events: events.length ? events : s.events }));
         })
         .catch((err) => {
-          pendingEventMutationRef.current = false;
           console.error("Event create failed", err);
-        });
+        })
+        .finally(endEventMutation);
     } else {
-      pendingEventMutationRef.current = false;
+      endEventMutation();
     }
     _log(currentUser, `Created event "${newE.title}"`, "events", newE.id);
   };
 
   const updateEvent: AppState["updateEvent"] = (id, patch) => {
     let updated: Event | undefined;
-    pendingEventMutationRef.current = true;
+    beginEventMutation();
     setState((s) => {
       const events = s.events.map((e) => (e.id === id ? ((updated = { ...e, ...patch }), updated) : e));
       return { ...s, events };
@@ -890,36 +922,34 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (updated && isSupabaseConfigured) {
       updateEventRow(id, updated)
         .then(async () => {
-          pendingEventMutationRef.current = false;
           const events = await loadEvents().catch(() => null);
           if (events) setState((s) => ({ ...s, events: events.length ? events : s.events }));
         })
         .catch((err) => {
-          pendingEventMutationRef.current = false;
           console.error("Event update failed", err);
-        });
+        })
+        .finally(endEventMutation);
     } else {
-      pendingEventMutationRef.current = false;
+      endEventMutation();
     }
     _log(currentUser, `Updated event`, "events", id);
   };
 
   const deleteEvent: AppState["deleteEvent"] = (id) => {
-    pendingEventMutationRef.current = true;
+    beginEventMutation();
     setState((s) => ({ ...s, events: s.events.filter((e) => e.id !== id) }));
     if (isSupabaseConfigured) {
       deleteEventRow(id)
         .then(async () => {
-          pendingEventMutationRef.current = false;
           const events = await loadEvents().catch(() => null);
           if (events) setState((s) => ({ ...s, events: events.length ? events : s.events }));
         })
         .catch((err) => {
-          pendingEventMutationRef.current = false;
           console.error("Event delete failed", err);
-        });
+        })
+        .finally(endEventMutation);
     } else {
-      pendingEventMutationRef.current = false;
+      endEventMutation();
     }
     _log(currentUser, `Deleted event`, "events", id);
   };
@@ -928,18 +958,30 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const e = state.events.find((x) => x.id === id);
     if (!e) return;
     const dup: Event = { ...e, id: "e" + Date.now(), title: e.title + " (Copy)", status: "Upcoming", attended: 0, registered: 0, feedback: [], expense: 0, income: 0 };
+    beginEventMutation();
     setState((s) => ({ ...s, events: [...s.events, dup] }));
-    insertEvent(dup).then(refreshEvents).catch((err) => console.error("Event duplicate failed", err));
+    insertEvent(dup)
+      .then(refreshEvents)
+      .catch((err) => console.error("Event duplicate failed", err))
+      .finally(endEventMutation);
     _log(currentUser, `Duplicated event`, "events", id);
   };
 
   const archiveEvent: AppState["archiveEvent"] = (id) => {
     let updated: Event | undefined;
+    beginEventMutation();
     setState((s) => {
       const events = s.events.map((e) => (e.id === id ? ((updated = { ...e, status: "Archived" as const }), updated) : e));
       return { ...s, events };
     });
-    if (updated) updateEventRow(id, updated).then(refreshEvents).catch((err) => console.error("Event archive failed", err));
+    if (updated) {
+      updateEventRow(id, updated)
+        .then(refreshEvents)
+        .catch((err) => console.error("Event archive failed", err))
+        .finally(endEventMutation);
+    } else {
+      endEventMutation();
+    }
     _log(currentUser, `Archived event`, "events", id);
   };
 
@@ -1169,3 +1211,4 @@ export function useApp() {
   if (!ctx) throw new Error("useApp must be inside AppProvider");
   return ctx;
 }
+
