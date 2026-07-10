@@ -853,7 +853,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     _log(currentUser, `Deleted task`, "tasks", id);
   };
 
-  const refreshEvents = () => loadEvents().then((events) => setState((s) => ({ ...s, events }))).catch((e) => console.error(e));
+  const refreshEvents = () => loadEvents().then((events) => setState((s) => ({ ...s, events: events.length ? events : s.events }))).catch((e) => console.error(e));
   const refreshFinance = () => loadFinance().then((finance) => setState((s) => ({ ...s, finance }))).catch((e) => console.error(e));
 
   const addEvent: AppState["addEvent"] = (e) => {

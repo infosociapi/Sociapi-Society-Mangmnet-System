@@ -1,10 +1,12 @@
-import { useMemo } from "react";
-import { Avatar, Badge, Card } from "../components/ui";
+import { useMemo, useState } from "react";
+import { Avatar, Badge, Button, Card, Input } from "../components/ui";
 import { useApp } from "../context/AppContext";
-import { Crown, Medal, Trophy, TrendingUp, Sparkles } from "lucide-react";
+import { Check, Crown, Medal, Pencil, Trophy, TrendingUp, Sparkles, X } from "lucide-react";
 
 export default function Leaderboard() {
-  const { users } = useApp();
+  const { users, updateUser } = useApp();
+  const [editingUserId, setEditingUserId] = useState<string | null>(null);
+  const [pointsDraft, setPointsDraft] = useState("");
 
   const ranking = useMemo(() => {
     return [...users].sort((a, b) => b.points - a.points);
@@ -13,6 +15,20 @@ export default function Leaderboard() {
   const promotions = useMemo(() => {
     return ranking.slice(0, 5).filter((u) => u.points > 600 && u.role === "General Member");
   }, [ranking]);
+
+  const openPointsEditor = (user: (typeof users)[number]) => {
+    setEditingUserId(user.id);
+    setPointsDraft(String(user.points ?? 0));
+  };
+
+  const savePoints = () => {
+    if (!editingUserId) return;
+    const value = Number(pointsDraft);
+    if (Number.isNaN(value) || value < 0) return;
+    updateUser(editingUserId, { points: value });
+    setEditingUserId(null);
+    setPointsDraft("");
+  };
 
   return (
     <div className="space-y-6">
@@ -72,6 +88,25 @@ export default function Leaderboard() {
                 <p className="text-xs text-slate-500 truncate">{u.position} · {u.department}</p>
               </div>
               <Badge tone="indigo">{u.attendance}%</Badge>
+              <div className="flex items-center gap-2">
+                {editingUserId === u.id ? (
+                  <div className="flex items-center gap-2">
+                    <Input
+                      type="number"
+                      min={0}
+                      value={pointsDraft}
+                      onChange={(e) => setPointsDraft(e.target.value)}
+                      className="w-24 h-8"
+                    />
+                    <Button size="sm" variant="ghost" icon={<Check className="h-3 w-3" />} onClick={savePoints} />
+                    <Button size="sm" variant="ghost" icon={<X className="h-3 w-3" />} onClick={() => { setEditingUserId(null); setPointsDraft(""); }} />
+                  </div>
+                ) : (
+                  <Button size="sm" variant="ghost" icon={<Pencil className="h-3 w-3" />} onClick={() => openPointsEditor(u)}>
+                    Edit
+                  </Button>
+                )}
+              </div>
               <div className="text-right w-24">
                 <p className="font-bold">{u.points}</p>
                 <p className="text-[10px] uppercase tracking-wider text-slate-500">points</p>
