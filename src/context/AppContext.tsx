@@ -718,12 +718,22 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (!currentUser || !body.trim()) return;
     const msg: ChatMessage = { id: "chat" + Date.now(), fromId: currentUser.id, toId, team, body, createdAt: new Date().toISOString(), read: false };
     setState((s) => ({ ...s, chats: [...s.chats, msg] }));
-    insertChatMessage({ fromId: currentUser.id, toId, team, body })
-      .then(async () => {
-        const chats = await loadChats();
-        setState((s) => ({ ...s, chats }));
-      })
-      .catch((error) => console.error("Chat send failed", error));
+    if (isSupabaseConfigured) {
+      insertChatMessage({ fromId: currentUser.id, toId, team, body })
+        .then(async () => {
+          const chats = await loadChats().catch(() => null);
+          if (chats) setState((s) => ({ ...s, chats }));
+        })
+        .catch((error) => {
+          console.error("Chat send failed", error);
+          addNotification({
+            title: "Message not delivered",
+            body: "Your message was kept locally, but it could not be saved to Supabase.",
+            channel: "In-App",
+            type: "alert",
+          });
+        });
+    }
     _log(currentUser, `Sent chat message`, "comms", toId || team);
   };
 
@@ -849,7 +859,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const addEvent: AppState["addEvent"] = (e) => {
     const newE: Event = { ...e, id: "e" + Date.now() };
     setState((s) => ({ ...s, events: [...s.events, newE] }));
-    insertEvent(newE).then(refreshEvents).catch((err) => console.error("Event create failed", err));
+    if (isSupabaseConfigured) {
+      insertEvent(newE)
+        .then(async (realId) => {
+          if (!realId) return;
+          const events = await loadEvents().catch(() => null);
+          if (events) setState((s) => ({ ...s, events }));
+        })
+        .catch((err) => console.error("Event create failed", err));
+    }
     _log(currentUser, `Created event "${newE.title}"`, "events", newE.id);
   };
 
@@ -859,13 +877,27 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const events = s.events.map((e) => (e.id === id ? ((updated = { ...e, ...patch }), updated) : e));
       return { ...s, events };
     });
-    if (updated) updateEventRow(id, updated).then(refreshEvents).catch((err) => console.error("Event update failed", err));
+    if (updated && isSupabaseConfigured) {
+      updateEventRow(id, updated)
+        .then(async () => {
+          const events = await loadEvents().catch(() => null);
+          if (events) setState((s) => ({ ...s, events }));
+        })
+        .catch((err) => console.error("Event update failed", err));
+    }
     _log(currentUser, `Updated event`, "events", id);
   };
 
   const deleteEvent: AppState["deleteEvent"] = (id) => {
     setState((s) => ({ ...s, events: s.events.filter((e) => e.id !== id) }));
-    deleteEventRow(id).then(refreshEvents).catch((err) => console.error("Event delete failed", err));
+    if (isSupabaseConfigured) {
+      deleteEventRow(id)
+        .then(async () => {
+          const events = await loadEvents().catch(() => null);
+          if (events) setState((s) => ({ ...s, events }));
+        })
+        .catch((err) => console.error("Event delete failed", err));
+    }
     _log(currentUser, `Deleted event`, "events", id);
   };
 

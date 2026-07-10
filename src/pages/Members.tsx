@@ -432,10 +432,11 @@ function MemberFormModal({
           <Select value={form.department || ""} onChange={(e) => {
             const dept = e.target.value;
             const roles = departmentRoles[dept] || allRoles;
+            const nextRole = ((roles as Role[]).includes(form.role as Role) ? form.role : roles[0]) as Role;
             setForm((f) => ({
               ...f,
               department: dept,
-              role: roles[0],
+              role: nextRole,
               position: dept,
             }));
           }}>
