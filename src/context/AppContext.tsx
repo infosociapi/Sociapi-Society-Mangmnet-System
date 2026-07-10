@@ -284,11 +284,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [state, hydrated, usingFallbackData]);
 
   const deletedAttendanceIdsRef = useRef<Set<string>>(new Set());
+  const pendingEventMutationRef = useRef(false);
 
   useEffect(() => {
     if (!hydrated || !isSupabaseConfigured || !currentUser) return;
     let active = true;
     const tick = async () => {
+      if (pendingEventMutationRef.current) return;
       try {
         const [members, chats, events, finance, departments, attendance, tasks] = await Promise.all([
           loadMembers(),
@@ -858,21 +860,29 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const addEvent: AppState["addEvent"] = (e) => {
     const newE: Event = { ...e, id: "e" + Date.now() };
+    pendingEventMutationRef.current = true;
     setState((s) => ({ ...s, events: [...s.events, newE] }));
     if (isSupabaseConfigured) {
       insertEvent(newE)
         .then(async (realId) => {
+          pendingEventMutationRef.current = false;
           if (!realId) return;
           const events = await loadEvents().catch(() => null);
           if (events) setState((s) => ({ ...s, events: events.length ? events : s.events }));
         })
-        .catch((err) => console.error("Event create failed", err));
+        .catch((err) => {
+          pendingEventMutationRef.current = false;
+          console.error("Event create failed", err);
+        });
+    } else {
+      pendingEventMutationRef.current = false;
     }
     _log(currentUser, `Created event "${newE.title}"`, "events", newE.id);
   };
 
   const updateEvent: AppState["updateEvent"] = (id, patch) => {
     let updated: Event | undefined;
+    pendingEventMutationRef.current = true;
     setState((s) => {
       const events = s.events.map((e) => (e.id === id ? ((updated = { ...e, ...patch }), updated) : e));
       return { ...s, events };
@@ -880,23 +890,36 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (updated && isSupabaseConfigured) {
       updateEventRow(id, updated)
         .then(async () => {
+          pendingEventMutationRef.current = false;
           const events = await loadEvents().catch(() => null);
           if (events) setState((s) => ({ ...s, events: events.length ? events : s.events }));
         })
-        .catch((err) => console.error("Event update failed", err));
+        .catch((err) => {
+          pendingEventMutationRef.current = false;
+          console.error("Event update failed", err);
+        });
+    } else {
+      pendingEventMutationRef.current = false;
     }
     _log(currentUser, `Updated event`, "events", id);
   };
 
   const deleteEvent: AppState["deleteEvent"] = (id) => {
+    pendingEventMutationRef.current = true;
     setState((s) => ({ ...s, events: s.events.filter((e) => e.id !== id) }));
     if (isSupabaseConfigured) {
       deleteEventRow(id)
         .then(async () => {
+          pendingEventMutationRef.current = false;
           const events = await loadEvents().catch(() => null);
           if (events) setState((s) => ({ ...s, events: events.length ? events : s.events }));
         })
-        .catch((err) => console.error("Event delete failed", err));
+        .catch((err) => {
+          pendingEventMutationRef.current = false;
+          console.error("Event delete failed", err);
+        });
+    } else {
+      pendingEventMutationRef.current = false;
     }
     _log(currentUser, `Deleted event`, "events", id);
   };
