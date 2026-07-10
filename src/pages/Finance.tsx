@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Badge, Button, Card, Input, Label, Modal, Select } from "../components/ui";
 import { useApp } from "../context/AppContext";
 import type { FinanceEntry } from "../types";
@@ -12,6 +12,12 @@ import {
   PiggyBank,
   AlertTriangle,
   Calculator,
+  Search,
+  Repeat,
+  HandCoins,
+  Download,
+  Bell,
+  Settings as SettingsIcon,
 } from "lucide-react";
 import {
   Area,
@@ -44,6 +50,10 @@ const EXPENSE_CATEGORIES = [
 
 type Mode = "income" | "expense";
 
+type RecurringItem = { id: string; label: string; amount: number; category: string; mode: Mode };
+type Pledge = { id: string; from: string; amount: number; note: string; createdAt: string };
+type FinanceSettings = { lowBalanceAlert: number | null; monthlyLimit: number | null };
+
 const emptyForm = (mode: Mode): Partial<FinanceEntry> => ({
   type: mode === "income" ? "Donation" : "Expense",
   amount: 0,
@@ -53,8 +63,27 @@ const emptyForm = (mode: Mode): Partial<FinanceEntry> => ({
   eventId: "",
 });
 
+// Small helpers to read/write the browser's local storage safely.
+// These features (budgets, pledges, repeat reminders) live on this device
+// only, since the database does not have columns for them yet.
+function loadLS<T>(key: string, fallback: T): T {
+  try {
+    const raw = window.localStorage.getItem(key);
+    return raw ? (JSON.parse(raw) as T) : fallback;
+  } catch {
+    return fallback;
+  }
+}
+function saveLS(key: string, value: unknown) {
+  try {
+    window.localStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    // ignore write errors (private browsing, storage full, etc.)
+  }
+}
+
 export default function Finance() {
-  const { finance, addFinance, updateFinance, deleteFinance, events, hasPermission } = useApp();
+  const { finance, addFinance, updateFinance, deleteFinance, events, hasPermission, currentUser } = useApp();
   const canManage = hasPermission("manage_finance");
 
   const [open, setOpen] = useState(false);
@@ -62,20 +91,38 @@ export default function Finance() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<Partial<FinanceEntry>>(emptyForm("income"));
   const [customCategory, setCustomCategory] = useState(false);
+  const [repeatMonthly, setRepeatMonthly] = useState(false);
+  const [pendingPledgeId, setPendingPledgeId] = useState<string | null>(null);
 
   const [txFilter, setTxFilter] = useState<"All" | "Income" | "Expense">("All");
+  const [search, setSearch] = useState("");
 
-  // ---- Quick Calculator state ----
+  // ---- Quick Calculator ----
   const [calcOpen, setCalcOpen] = useState(false);
   const [calcRows, setCalcRows] = useState<{ id: number; label: string; amount: number }[]>([
     { id: 1, label: "", amount: 0 },
   ]);
   const calcTotal = calcRows.reduce((s, r) => s + (Number(r.amount) || 0), 0);
-
   const addCalcRow = () => setCalcRows((r) => [...r, { id: Date.now(), label: "", amount: 0 }]);
   const removeCalcRow = (id: number) => setCalcRows((r) => (r.length > 1 ? r.filter((x) => x.id !== id) : r));
   const updateCalcRow = (id: number, key: "label" | "amount", value: string | number) =>
     setCalcRows((r) => r.map((x) => (x.id === id ? { ...x, [key]: value } : x)));
+
+  // ---- Local-only features: recurring reminders, pledges, settings, added-by tag ----
+  const [recurring, setRecurring] = useState<RecurringItem[]>(() => loadLS("sociapi-finance-recurring", []));
+  const [pledges, setPledges] = useState<Pledge[]>(() => loadLS("sociapi-finance-pledges", []));
+  const [settings, setSettings] = useState<FinanceSettings>(() =>
+    loadLS("sociapi-finance-settings", { lowBalanceAlert: null, monthlyLimit: null })
+  );
+  const [addedByMap, setAddedByMap] = useState<Record<string, string>>(() => loadLS("sociapi-finance-addedby", {}));
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsForm, setSettingsForm] = useState(settings);
+  const [pledgeForm, setPledgeForm] = useState({ from: "", amount: 0, note: "" });
+
+  useEffect(() => saveLS("sociapi-finance-recurring", recurring), [recurring]);
+  useEffect(() => saveLS("sociapi-finance-pledges", pledges), [pledges]);
+  useEffect(() => saveLS("sociapi-finance-settings", settings), [settings]);
+  useEffect(() => saveLS("sociapi-finance-addedby", addedByMap), [addedByMap]);
 
   const totals = useMemo(() => {
     const income = finance.filter((f) => f.type !== "Expense").reduce((s, f) => s + f.amount, 0);
@@ -111,9 +158,7 @@ export default function Finance() {
     return Object.entries(map).map(([name, value]) => ({ name, value }));
   }, [finance]);
 
-  // ---- Event Profit & Loss ----
-  // Combines money entered directly on an event (Events page) with any Finance
-  // entries linked to that event, so nothing gets missed or double-guessed.
+  // ---- Event Profit & Loss, now with a budget bar per event ----
   const eventFinance = useMemo(() => {
     return events
       .map((e) => {
@@ -122,36 +167,85 @@ export default function Finance() {
         const linkedExpense = linked.filter((f) => f.type === "Expense").reduce((s, f) => s + f.amount, 0);
         const collected = (e.income || 0) + linkedIncome;
         const spent = (e.expense || 0) + linkedExpense;
-        return { id: e.id, title: e.title, collected, spent, net: collected - spent };
+        return { id: e.id, title: e.title, collected, spent, net: collected - spent, budget: e.budget || 0 };
       })
-      .filter((x) => x.collected > 0 || x.spent > 0)
+      .filter((x) => x.collected > 0 || x.spent > 0 || x.budget > 0)
       .sort((a, b) => a.net - b.net);
   }, [events, finance]);
+
+  const topCategoryThisMonth = useMemo(() => {
+    const now = new Date();
+    const map: Record<string, number> = {};
+    finance.forEach((f) => {
+      const d = new Date(f.date);
+      if (f.type === "Expense" && d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear()) {
+        map[f.category] = (map[f.category] || 0) + f.amount;
+      }
+    });
+    const entries = Object.entries(map).sort((a, b) => b[1] - a[1]);
+    return entries[0] ? { name: entries[0][0], amount: entries[0][1] } : null;
+  }, [finance]);
+
+  const dueRecurring = useMemo(() => {
+    const now = new Date();
+    return recurring.filter((r) => {
+      const doneThisMonth = finance.some((f) => {
+        const d = new Date(f.date);
+        return (
+          d.getMonth() === now.getMonth() &&
+          d.getFullYear() === now.getFullYear() &&
+          f.description === r.label &&
+          f.category === r.category
+        );
+      });
+      return !doneThisMonth;
+    });
+  }, [recurring, finance]);
 
   const pieColors = ["#6366f1", "#a855f7", "#10b981", "#f43f5e", "#f59e0b"];
 
   const filteredTx = useMemo(() => {
-    if (txFilter === "All") return finance;
-    return finance.filter((f) => (txFilter === "Income" ? f.type !== "Expense" : f.type === "Expense"));
-  }, [finance, txFilter]);
+    let list = finance;
+    if (txFilter !== "All") list = list.filter((f) => (txFilter === "Income" ? f.type !== "Expense" : f.type === "Expense"));
+    if (search.trim()) {
+      const q = search.toLowerCase();
+      list = list.filter((f) => f.description.toLowerCase().includes(q) || f.category.toLowerCase().includes(q));
+    }
+    return list;
+  }, [finance, txFilter, search]);
 
-  const openCollect = (prefillAmount?: number) => {
+  const addedByKey = (description: string, amount: number, date: string) => `${description}|${amount}|${date.slice(0, 10)}`;
+
+  const openCollect = (opts?: { amount?: number; description?: string; category?: string }) => {
     setEditingId(null);
     setMode("income");
     setCustomCategory(false);
-    setForm({ ...emptyForm("income"), amount: prefillAmount || 0 });
+    setRepeatMonthly(false);
+    setForm({
+      ...emptyForm("income"),
+      amount: opts?.amount || 0,
+      description: opts?.description || "",
+      category: opts?.category || (emptyForm("income").category as string),
+    });
     setOpen(true);
   };
-  const openExpense = (prefillAmount?: number) => {
+  const openExpense = (opts?: { amount?: number; description?: string; category?: string }) => {
     setEditingId(null);
     setMode("expense");
     setCustomCategory(false);
-    setForm({ ...emptyForm("expense"), amount: prefillAmount || 0 });
+    setRepeatMonthly(false);
+    setForm({
+      ...emptyForm("expense"),
+      amount: opts?.amount || 0,
+      description: opts?.description || "",
+      category: opts?.category || (emptyForm("expense").category as string),
+    });
     setOpen(true);
   };
   const openEditEntry = (f: FinanceEntry) => {
     setEditingId(f.id);
     setMode(f.type === "Expense" ? "expense" : "income");
+    setRepeatMonthly(false);
     const list = f.type === "Expense" ? EXPENSE_CATEGORIES : INCOME_CATEGORIES;
     setCustomCategory(!list.includes(f.category));
     setForm({ ...f, date: f.date.slice(0, 10) });
@@ -161,8 +255,53 @@ export default function Finance() {
   const useCalcTotal = (target: Mode) => {
     setCalcOpen(false);
     setCalcRows([{ id: 1, label: "", amount: 0 }]);
-    if (target === "income") openCollect(calcTotal);
-    else openExpense(calcTotal);
+    if (target === "income") openCollect({ amount: calcTotal });
+    else openExpense({ amount: calcTotal });
+  };
+
+  const addRecurringNow = (r: RecurringItem) => {
+    if (r.mode === "income") openCollect({ amount: r.amount, description: r.label, category: r.category });
+    else openExpense({ amount: r.amount, description: r.label, category: r.category });
+  };
+  const removeRecurring = (id: string) => setRecurring((r) => r.filter((x) => x.id !== id));
+
+  const addPledge = () => {
+    if (!pledgeForm.from || !pledgeForm.amount) return;
+    setPledges((p) => [...p, { id: "pl" + Date.now(), from: pledgeForm.from, amount: pledgeForm.amount, note: pledgeForm.note, createdAt: new Date().toISOString() }]);
+    setPledgeForm({ from: "", amount: 0, note: "" });
+  };
+  const removePledge = (id: string) => setPledges((p) => p.filter((x) => x.id !== id));
+  const markPledgeReceived = (p: Pledge) => {
+    setPendingPledgeId(p.id);
+    openCollect({ amount: p.amount, description: `Received from ${p.from}${p.note ? " — " + p.note : ""}`, category: "Sponsorship" });
+  };
+
+  const saveSettings = () => {
+    setSettings(settingsForm);
+    setSettingsOpen(false);
+  };
+
+  const exportCSV = () => {
+    const rows: string[][] = [["Date", "Type", "Description", "Category", "Reference", "Event", "Amount"]];
+    filteredTx.forEach((f) =>
+      rows.push([
+        new Date(f.date).toLocaleDateString(),
+        f.type,
+        f.description,
+        f.category,
+        f.reference || "",
+        events.find((e) => e.id === f.eventId)?.title || "",
+        String(f.amount),
+      ])
+    );
+    const csv = rows.map((r) => r.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(",")).join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `finance-report-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
   };
 
   const save = () => {
@@ -176,13 +315,32 @@ export default function Finance() {
       eventId: form.eventId || undefined,
       reference: form.reference || undefined,
     };
-    if (editingId) updateFinance(editingId, payload);
-    else addFinance(payload);
+    if (editingId) {
+      updateFinance(editingId, payload);
+    } else {
+      addFinance(payload);
+      if (currentUser) {
+        const key = addedByKey(payload.description, payload.amount, payload.date);
+        setAddedByMap((m) => ({ ...m, [key]: currentUser.name }));
+      }
+      if (repeatMonthly) {
+        const exists = recurring.some((r) => r.label === payload.description && r.category === payload.category && r.mode === mode);
+        if (!exists) {
+          setRecurring((r) => [...r, { id: "rec" + Date.now(), label: payload.description, amount: payload.amount, category: payload.category, mode }]);
+        }
+      }
+      if (pendingPledgeId) {
+        setPledges((p) => p.filter((x) => x.id !== pendingPledgeId));
+        setPendingPledgeId(null);
+      }
+    }
     setOpen(false);
     setEditingId(null);
+    setRepeatMonthly(false);
   };
 
   const categoryList = mode === "income" ? INCOME_CATEGORIES : EXPENSE_CATEGORIES;
+  const monthlyPct = settings.monthlyLimit ? (totals.monthOut / settings.monthlyLimit) * 100 : 0;
 
   return (
     <div className="space-y-6">
@@ -191,14 +349,28 @@ export default function Finance() {
           <h1 className="text-2xl font-bold tracking-tight">Finance</h1>
           <p className="text-sm text-slate-500">One simple place to track money in, money out, and every event's result.</p>
         </div>
+        <Button variant="ghost" icon={<SettingsIcon className="h-4 w-4" />} onClick={() => { setSettingsForm(settings); setSettingsOpen(true); }}>
+          Alerts & Limits
+        </Button>
       </div>
 
-      {/* Balance hero — the one number everyone actually wants to see */}
+      {settings.lowBalanceAlert !== null && totals.balance < settings.lowBalanceAlert && (
+        <div className="px-4 py-3 rounded-xl bg-amber-500/15 text-amber-700 dark:text-amber-300 text-sm ring-1 ring-amber-500/30 flex items-center gap-2">
+          <Bell className="h-4 w-4 shrink-0" /> Balance is below your safe limit of PKR {settings.lowBalanceAlert.toLocaleString()}. Time to slow down spending or collect more.
+        </div>
+      )}
+
+      {/* Balance hero — shows the real sign now, loss can never look like profit */}
       <Card className={`p-6 text-white ${totals.balance >= 0 ? "soc-bg-teal" : "soc-bg-rose"}`}>
         <div className="flex items-center justify-between flex-wrap gap-4">
           <div>
             <p className="text-xs uppercase tracking-wider opacity-90">Current Balance</p>
-            <p className="text-4xl font-bold mt-1">PKR {Math.abs(totals.balance).toLocaleString()}</p>
+            <p className="text-4xl font-bold mt-1">
+              {totals.balance < 0 ? "-" : ""}PKR {Math.abs(totals.balance).toLocaleString()}
+            </p>
+            <span className="inline-block px-3 py-1 rounded-full bg-white/20 text-xs font-bold tracking-wider mt-2">
+              {totals.balance >= 0 ? "PROFIT" : "LOSS"}
+            </span>
             <p className="text-sm opacity-90 mt-2">
               {totals.balance >= 0
                 ? "Good news — you have more money collected than spent."
@@ -215,7 +387,6 @@ export default function Finance() {
         </div>
       </Card>
 
-      {/* Two clear actions instead of one confusing form */}
       {canManage && (
         <div className="flex flex-wrap gap-3">
           <Button icon={<ArrowUpRight className="h-4 w-4" />} onClick={() => openCollect()}>
@@ -227,6 +398,9 @@ export default function Finance() {
           <Button variant="ghost" icon={<Calculator className="h-4 w-4" />} onClick={() => setCalcOpen(true)}>
             Quick Calculator
           </Button>
+          <Button variant="ghost" icon={<Download className="h-4 w-4" />} onClick={exportCSV}>
+            Export CSV
+          </Button>
         </div>
       )}
 
@@ -234,14 +408,109 @@ export default function Finance() {
         <KpiF icon={<TrendingUp className="h-5 w-5" />} label="Collected This Month" value={totals.monthIn} tone="emerald" />
         <KpiF icon={<TrendingDown className="h-5 w-5" />} label="Spent This Month" value={totals.monthOut} tone="rose" />
         <KpiF icon={<Wallet className="h-5 w-5" />} label="Donations Total" value={totals.donations} tone="violet" />
-        <KpiF icon={<ArrowUpRight className="h-5 w-5" />} label="Sponsorship Total" value={totals.sponsorships} tone="indigo" />
+        <Card className="p-4">
+          <div className="flex items-start justify-between">
+            <div className="h-10 w-10 rounded-xl soc-bg-amber text-white flex items-center justify-center shadow-md">
+              <AlertTriangle className="h-5 w-5" />
+            </div>
+          </div>
+          <p className="mt-3 text-xl font-bold tracking-tight truncate">
+            {topCategoryThisMonth ? `PKR ${topCategoryThisMonth.amount.toLocaleString()}` : "PKR 0"}
+          </p>
+          <p className="text-xs text-slate-500">Top Spend Category{topCategoryThisMonth ? `: ${topCategoryThisMonth.name}` : ""}</p>
+        </Card>
       </div>
 
-      {/* Event Profit & Loss — the exact thing that was missing */}
+      {settings.monthlyLimit ? (
+        <Card className="p-5">
+          <div className="flex items-center justify-between mb-2">
+            <p className="font-semibold text-sm">Monthly Spending Limit</p>
+            <span className="text-xs text-slate-500">
+              PKR {totals.monthOut.toLocaleString()} / PKR {settings.monthlyLimit.toLocaleString()}
+            </span>
+          </div>
+          <div className="h-2 rounded-full bg-slate-200 dark:bg-white/10 overflow-hidden">
+            <div
+              className={`h-full ${monthlyPct > 100 ? "bg-rose-500" : monthlyPct > 80 ? "bg-amber-500" : "bg-emerald-500"}`}
+              style={{ width: `${Math.min(100, monthlyPct)}%` }}
+            />
+          </div>
+          {monthlyPct > 100 && <p className="text-xs text-rose-600 mt-2">You have gone over this month's limit.</p>}
+        </Card>
+      ) : null}
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* Recurring reminders */}
+        <Card className="p-6">
+          <div className="flex items-center gap-2 mb-3">
+            <Repeat className="h-4 w-4 text-indigo-500" />
+            <h3 className="font-semibold">Due This Month</h3>
+          </div>
+          <p className="text-xs text-slate-500 mb-3">
+            Mark "repeat every month" on any entry and it will show up here every month until you add it.
+          </p>
+          {dueRecurring.length === 0 ? (
+            <p className="text-sm text-slate-500 text-center py-6">Nothing due right now.</p>
+          ) : (
+            <div className="space-y-2">
+              {dueRecurring.map((r) => (
+                <div key={r.id} className="flex items-center justify-between gap-2 p-3 rounded-xl bg-slate-100/60 dark:bg-white/5">
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold truncate">{r.label}</p>
+                    <p className="text-xs text-slate-500">{r.category} · PKR {r.amount.toLocaleString()}</p>
+                  </div>
+                  <div className="flex gap-1 shrink-0">
+                    <Button size="sm" onClick={() => addRecurringNow(r)}>Add Now</Button>
+                    <button onClick={() => removeRecurring(r.id)} className="text-xs text-rose-500 hover:underline px-1">Stop</button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </Card>
+
+        {/* Pledges / promised money not yet received */}
+        <Card className="p-6">
+          <div className="flex items-center gap-2 mb-3">
+            <HandCoins className="h-4 w-4 text-emerald-500" />
+            <h3 className="font-semibold">Promised But Not Received Yet</h3>
+          </div>
+          <p className="text-xs text-slate-500 mb-3">
+            A sponsor said yes but money has not landed? Add it here so it does not get counted as real balance too early.
+          </p>
+          {canManage && (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-2 mb-3">
+              <Input placeholder="Who promised" value={pledgeForm.from} onChange={(e) => setPledgeForm({ ...pledgeForm, from: e.target.value })} />
+              <Input type="number" placeholder="Amount" value={pledgeForm.amount || ""} onChange={(e) => setPledgeForm({ ...pledgeForm, amount: +e.target.value })} />
+              <Button size="sm" onClick={addPledge}>Add to List</Button>
+            </div>
+          )}
+          {pledges.length === 0 ? (
+            <p className="text-sm text-slate-500 text-center py-6">Nothing pending right now.</p>
+          ) : (
+            <div className="space-y-2">
+              {pledges.map((p) => (
+                <div key={p.id} className="flex items-center justify-between gap-2 p-3 rounded-xl bg-emerald-500/10">
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold truncate">{p.from}</p>
+                    <p className="text-xs text-slate-500">PKR {p.amount.toLocaleString()}{p.note ? ` · ${p.note}` : ""}</p>
+                  </div>
+                  <div className="flex gap-1 shrink-0">
+                    <Button size="sm" onClick={() => markPledgeReceived(p)}>Mark Received</Button>
+                    <button onClick={() => removePledge(p.id)} className="text-xs text-rose-500 hover:underline px-1">Remove</button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </Card>
+      </div>
+
+      {/* Event Profit & Loss, with a budget bar per event */}
       <Card className="p-6">
         <div className="mb-4">
           <h3 className="font-semibold">Event Profit & Loss</h3>
-          <p className="text-xs text-slate-500">See which events made money and which ones cost more than they earned.</p>
+          <p className="text-xs text-slate-500">See which events made money, which cost more than they earned, and how close each is to its budget.</p>
         </div>
         {eventFinance.length === 0 ? (
           <p className="text-sm text-slate-500 text-center py-8">No event money recorded yet.</p>
@@ -267,24 +536,38 @@ export default function Finance() {
               </ResponsiveContainer>
             </div>
             <div className="mt-4 space-y-2">
-              {eventFinance.map((ev) => (
-                <div
-                  key={ev.id}
-                  className={`flex items-center justify-between gap-3 p-3 rounded-xl ${
-                    ev.net >= 0 ? "bg-emerald-500/10" : "bg-rose-500/10"
-                  }`}
-                >
-                  <div className="min-w-0">
-                    <p className="font-semibold text-sm truncate">{ev.title}</p>
-                    <p className="text-xs text-slate-500">
-                      Collected PKR {ev.collected.toLocaleString()} · Spent PKR {ev.spent.toLocaleString()}
-                    </p>
+              {eventFinance.map((ev) => {
+                const budgetPct = ev.budget ? (ev.spent / ev.budget) * 100 : 0;
+                return (
+                  <div key={ev.id} className={`p-3 rounded-xl ${ev.net >= 0 ? "bg-emerald-500/10" : "bg-rose-500/10"}`}>
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="font-semibold text-sm truncate">{ev.title}</p>
+                        <p className="text-xs text-slate-500">
+                          Collected PKR {ev.collected.toLocaleString()} · Spent PKR {ev.spent.toLocaleString()}
+                        </p>
+                      </div>
+                      <Badge tone={ev.net >= 0 ? "emerald" : "rose"}>
+                        {ev.net >= 0 ? `Profit of PKR ${ev.net.toLocaleString()}` : `Loss of PKR ${Math.abs(ev.net).toLocaleString()}`}
+                      </Badge>
+                    </div>
+                    {ev.budget > 0 && (
+                      <div className="mt-2">
+                        <div className="flex justify-between text-[10px] text-slate-500 mb-1">
+                          <span>Budget used</span>
+                          <span>PKR {ev.spent.toLocaleString()} / {ev.budget.toLocaleString()}</span>
+                        </div>
+                        <div className="h-1.5 rounded-full bg-slate-200 dark:bg-white/10 overflow-hidden">
+                          <div
+                            className={`h-full ${budgetPct > 100 ? "bg-rose-500" : budgetPct > 80 ? "bg-amber-500" : "bg-emerald-500"}`}
+                            style={{ width: `${Math.min(100, budgetPct)}%` }}
+                          />
+                        </div>
+                      </div>
+                    )}
                   </div>
-                  <Badge tone={ev.net >= 0 ? "emerald" : "rose"}>
-                    {ev.net >= 0 ? `Profit of PKR ${ev.net.toLocaleString()}` : `Loss of PKR ${Math.abs(ev.net).toLocaleString()}`}
-                  </Badge>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </>
         )}
@@ -346,7 +629,11 @@ export default function Finance() {
       <Card className="p-6">
         <div className="flex items-center justify-between mb-4 flex-wrap gap-3">
           <h3 className="font-semibold">Transactions</h3>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+              <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search…" className="pl-9 w-48" />
+            </div>
             {(["All", "Income", "Expense"] as const).map((t) => (
               <button
                 key={t}
@@ -378,40 +665,46 @@ export default function Finance() {
               {filteredTx.length === 0 && (
                 <tr>
                   <td colSpan={canManage ? 8 : 7} className="py-8 text-center text-slate-500">
-                    No transactions here yet.
+                    No transactions match.
                   </td>
                 </tr>
               )}
-              {filteredTx.map((f) => (
-                <tr key={f.id} className="border-b border-slate-200/60 dark:border-white/5 hover:bg-slate-100/40 dark:hover:bg-white/5">
-                  <td className="py-3 px-3 text-slate-500">{new Date(f.date).toLocaleDateString()}</td>
-                  <td className="py-3 px-3">
-                    <Badge tone={f.type === "Expense" ? "rose" : f.type === "Donation" ? "violet" : f.type === "Sponsorship" ? "indigo" : "emerald"}>
-                      {f.type}
-                    </Badge>
-                  </td>
-                  <td className="py-3 px-3">{f.description}</td>
-                  <td className="py-3 px-3 text-slate-500">{f.category}</td>
-                  <td className="py-3 px-3 text-slate-500">{f.reference || "—"}</td>
-                  <td className="py-3 px-3 text-slate-500">{events.find((e) => e.id === f.eventId)?.title || "—"}</td>
-                  <td className="py-3 px-3 text-right font-semibold">
-                    <span className={f.type === "Expense" ? "text-rose-600" : "text-emerald-600"}>
-                      {f.type === "Expense" ? <ArrowDownRight className="inline h-3 w-3" /> : <ArrowUpRight className="inline h-3 w-3" />} PKR{" "}
-                      {f.amount.toLocaleString()}
-                    </span>
-                  </td>
-                  {canManage && (
-                    <td className="py-3 px-3 text-right">
-                      <button className="text-xs text-blue-600 hover:underline mr-3" onClick={() => openEditEntry(f)}>
-                        Edit
-                      </button>
-                      <button className="text-xs text-rose-600 hover:underline" onClick={() => deleteFinance(f.id)}>
-                        Delete
-                      </button>
+              {filteredTx.map((f) => {
+                const addedBy = addedByMap[addedByKey(f.description, f.amount, f.date)];
+                return (
+                  <tr key={f.id} className="border-b border-slate-200/60 dark:border-white/5 hover:bg-slate-100/40 dark:hover:bg-white/5">
+                    <td className="py-3 px-3 text-slate-500">{new Date(f.date).toLocaleDateString()}</td>
+                    <td className="py-3 px-3">
+                      <Badge tone={f.type === "Expense" ? "rose" : f.type === "Donation" ? "violet" : f.type === "Sponsorship" ? "indigo" : "emerald"}>
+                        {f.type}
+                      </Badge>
                     </td>
-                  )}
-                </tr>
-              ))}
+                    <td className="py-3 px-3">
+                      {f.description}
+                      {addedBy && <span className="block text-[10px] text-slate-400">added by {addedBy}</span>}
+                    </td>
+                    <td className="py-3 px-3 text-slate-500">{f.category}</td>
+                    <td className="py-3 px-3 text-slate-500">{f.reference || "—"}</td>
+                    <td className="py-3 px-3 text-slate-500">{events.find((e) => e.id === f.eventId)?.title || "—"}</td>
+                    <td className="py-3 px-3 text-right font-semibold">
+                      <span className={f.type === "Expense" ? "text-rose-600" : "text-emerald-600"}>
+                        {f.type === "Expense" ? <ArrowDownRight className="inline h-3 w-3" /> : <ArrowUpRight className="inline h-3 w-3" />} PKR{" "}
+                        {f.amount.toLocaleString()}
+                      </span>
+                    </td>
+                    {canManage && (
+                      <td className="py-3 px-3 text-right">
+                        <button className="text-xs text-blue-600 hover:underline mr-3" onClick={() => openEditEntry(f)}>
+                          Edit
+                        </button>
+                        <button className="text-xs text-rose-600 hover:underline" onClick={() => deleteFinance(f.id)}>
+                          Delete
+                        </button>
+                      </td>
+                    )}
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -512,6 +805,13 @@ export default function Finance() {
               </Select>
             </div>
           </div>
+
+          {!editingId && (
+            <label className="flex items-center gap-2 text-sm cursor-pointer">
+              <input type="checkbox" checked={repeatMonthly} onChange={(e) => setRepeatMonthly(e.target.checked)} />
+              Repeat this every month (it will show up in "Due This Month")
+            </label>
+          )}
         </div>
         <div className="flex justify-end gap-2 mt-6">
           <Button variant="ghost" onClick={() => setOpen(false)}>
@@ -523,7 +823,7 @@ export default function Finance() {
         </div>
       </Modal>
 
-      {/* Quick Calculator — add up items first, then send the total straight into a new entry */}
+      {/* Quick Calculator */}
       <Modal open={calcOpen} onClose={() => setCalcOpen(false)} title="Quick Calculator" size="lg">
         <p className="text-sm text-slate-500 mb-3">
           Add up a few bills or a few sources of money before you save them. Nothing here is saved until you use the total.
@@ -562,6 +862,37 @@ export default function Finance() {
             Use as Money Collected
           </Button>
           <Button onClick={() => useCalcTotal("expense")}>Use as Expense</Button>
+        </div>
+      </Modal>
+
+      {/* Alerts & Limits settings */}
+      <Modal open={settingsOpen} onClose={() => setSettingsOpen(false)} title="Alerts & Limits">
+        <div className="space-y-4">
+          <div>
+            <Label>Warn me when balance falls below (PKR)</Label>
+            <Input
+              type="number"
+              value={settingsForm.lowBalanceAlert ?? ""}
+              onChange={(e) => setSettingsForm({ ...settingsForm, lowBalanceAlert: e.target.value ? +e.target.value : null })}
+              placeholder="e.g. 10000"
+            />
+          </div>
+          <div>
+            <Label>Monthly spending limit (PKR)</Label>
+            <Input
+              type="number"
+              value={settingsForm.monthlyLimit ?? ""}
+              onChange={(e) => setSettingsForm({ ...settingsForm, monthlyLimit: e.target.value ? +e.target.value : null })}
+              placeholder="e.g. 50000"
+            />
+          </div>
+          <p className="text-xs text-slate-500">These are saved on this device only, so each admin can set their own comfort level.</p>
+        </div>
+        <div className="flex justify-end gap-2 mt-6">
+          <Button variant="ghost" onClick={() => setSettingsOpen(false)}>
+            Cancel
+          </Button>
+          <Button onClick={saveSettings}>Save</Button>
         </div>
       </Modal>
     </div>
