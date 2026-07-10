@@ -313,7 +313,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           ...s,
           users: members,
           chats,
-          events,
+          events: events.length ? events : s.events,
           finance,
           departments: departments.length ? departments : s.departments,
           attendance: filteredAttendance,
@@ -864,7 +864,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         .then(async (realId) => {
           if (!realId) return;
           const events = await loadEvents().catch(() => null);
-          if (events) setState((s) => ({ ...s, events }));
+          if (events) setState((s) => ({ ...s, events: events.length ? events : s.events }));
         })
         .catch((err) => console.error("Event create failed", err));
     }
@@ -881,7 +881,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       updateEventRow(id, updated)
         .then(async () => {
           const events = await loadEvents().catch(() => null);
-          if (events) setState((s) => ({ ...s, events }));
+          if (events) setState((s) => ({ ...s, events: events.length ? events : s.events }));
         })
         .catch((err) => console.error("Event update failed", err));
     }
@@ -894,7 +894,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       deleteEventRow(id)
         .then(async () => {
           const events = await loadEvents().catch(() => null);
-          if (events) setState((s) => ({ ...s, events }));
+          if (events) setState((s) => ({ ...s, events: events.length ? events : s.events }));
         })
         .catch((err) => console.error("Event delete failed", err));
     }
