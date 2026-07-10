@@ -5,11 +5,24 @@ import { useApp } from "../context/AppContext";
 import type { Event } from "../types";
 import { Archive, CalendarDays, Copy, MapPin, Pencil, Plus, Trash2, Users2 } from "lucide-react";
 
+// IMPORTANT: never use `date.toISOString()` to prefill the <input type="date">
+// / <input type="time"> fields below. toISOString() returns UTC, but those
+// inputs treat the string as LOCAL time. In a UTC+5 timezone (Pakistan) that
+// silently shifts every default/edited date 5 hours into the past, which is
+// enough to push a brand-new event's date before "now" — so it immediately
+// gets classified as a past event and disappears from the Upcoming list.
+// This builds a local-time "YYYY-MM-DDTHH:MM" string instead, with no UTC
+// conversion, so what the user sees in the form is what actually gets saved.
+function toLocalInputValue(d: Date): string {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
 const empty = (): Partial<Event> => ({
   title: "",
   description: "",
   type: "event",
-  date: new Date().toISOString().slice(0, 16),
+  date: toLocalInputValue(new Date()),
   location: "",
   capacity: 100,
   registered: 0,
@@ -43,10 +56,13 @@ export default function Events() {
   }), [events]);
 
   const openCreate = () => { setEditing(null); setForm(empty()); setOpen(true); };
-  const openEdit = (e: Event) => { setEditing(e); setForm({ ...e, date: new Date(e.date).toISOString().slice(0, 16) }); setOpen(true); };
+  const openEdit = (e: Event) => { setEditing(e); setForm({ ...e, date: toLocalInputValue(new Date(e.date)) }); setOpen(true); };
 
   const save = () => {
     if (!form.title || !form.date) return;
+    // form.date is already a local "YYYY-MM-DDTHH:MM" string (see
+    // toLocalInputValue), so `new Date(...)` here correctly parses it as
+    // local time — no timezone shift.
     const dt = new Date(form.date as string);
     const nowDay = new Date();
     nowDay.setHours(0, 0, 0, 0);
@@ -115,7 +131,7 @@ export default function Events() {
             </div>
             <div>
               <Label>Time</Label>
-              <Input type="time" value={form.date ? form.date.slice(11, 16) : "09:00"} onChange={(e) => setForm({ ...form, date: `${(form.date?.slice(0, 10) || new Date().toISOString().slice(0, 10))}T${e.target.value}` })} />
+              <Input type="time" value={form.date ? form.date.slice(11, 16) : "09:00"} onChange={(e) => setForm({ ...form, date: `${(form.date?.slice(0, 10) || toLocalInputValue(new Date()).slice(0, 10))}T${e.target.value}` })} />
             </div>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
