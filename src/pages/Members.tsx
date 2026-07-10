@@ -294,7 +294,7 @@ function MemberFormModal({
 }: MemberFormModalProps) {
   type MemberForm = Partial<User> & { temporaryPassword?: string };
   const defaultDept = departments[0] || "General Secretary";
-  const defaultRole = (departmentRoles[defaultDept] || ["Member"])[0];
+  const defaultRole: Role = "Member";
   
   const [form, setForm] = useState<MemberForm>(
     editing || {
@@ -335,13 +335,12 @@ function MemberFormModal({
       setForm(editing);
     } else {
       const dept = departments[0] || "General Secretary";
-      const role = (departmentRoles[dept] || ["Member"])[0];
       setForm({
         name: "",
         username: "",
         email: "",
         temporaryPassword: "",
-        role,
+        role: "Member" as Role,
         position: dept,
         department: dept,
         specialNumber: "",
@@ -374,6 +373,43 @@ function MemberFormModal({
 
   return (
     <Modal open={open} onClose={onClose} title={editing ? "Edit Member" : "Add Member"} size="lg">
+      {editing && (
+        <div className="mb-4 grid grid-cols-1 md:grid-cols-3 gap-4 p-4 rounded-xl bg-amber-500/10 ring-1 ring-amber-500/20">
+          <div>
+            <Label>Points (custom)</Label>
+            <Input
+              type="number"
+              min={0}
+              value={form.points ?? 0}
+              onChange={(e) => upd("points", Number(e.target.value))}
+              placeholder="0"
+            />
+            <p className="text-[10px] text-slate-500 mt-1">Current: {editing.points} pts</p>
+          </div>
+          <div>
+            <Label>Performance Score</Label>
+            <Input
+              type="number"
+              min={0}
+              max={100}
+              value={form.performanceScore ?? 0}
+              onChange={(e) => upd("performanceScore", Number(e.target.value))}
+              placeholder="0–100"
+            />
+          </div>
+          <div>
+            <Label>Attendance %</Label>
+            <Input
+              type="number"
+              min={0}
+              max={100}
+              value={form.attendance ?? 0}
+              onChange={(e) => upd("attendance", Number(e.target.value))}
+              placeholder="0–100"
+            />
+          </div>
+        </div>
+      )}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div>
           <Label>Name</Label>

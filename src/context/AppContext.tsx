@@ -36,12 +36,14 @@ import {
   deleteEventRow,
   deleteFinanceRow,
   deleteMemberRow,
+  deleteTaskRow,
   ensureMember,
   insertChatMessage,
   insertDepartment,
   insertEvent,
   insertFinance,
   insertMember,
+  insertTask,
   loadAttendance,
   loadChats,
   loadDepartments,
@@ -49,11 +51,13 @@ import {
   loadEvents,
   loadFinance,
   loadMembers,
+  loadTasks,
   saveErpState,
   updateDepartmentRow,
   updateEventRow,
   updateFinanceRow,
   updateMemberRow,
+  updateTaskRow,
   upsertAttendanceRecord,
 } from "../lib/supabaseStore";
 import { isSupabaseConfigured, supabase, supabaseConfigMessage } from "../lib/supabase";
@@ -286,13 +290,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
     let active = true;
     const tick = async () => {
       try {
-        const [members, chats, events, finance, departments, attendance] = await Promise.all([
+        const [members, chats, events, finance, departments, attendance, tasks] = await Promise.all([
           loadMembers(),
           loadChats(),
           loadEvents(),
           loadFinance(),
           loadDepartments(),
           loadAttendance(),
+          loadTasks(),
         ]);
         if (!active) return;
         const filteredAttendance = deletedAttendanceIdsRef.current.size
@@ -312,6 +317,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           finance,
           departments: departments.length ? departments : s.departments,
           attendance: filteredAttendance,
+          tasks,
         }));
         setUsingFallbackData(false);
       } catch (error) {
@@ -750,8 +756,38 @@ export function AppProvider({ children }: { children: ReactNode }) {
   };
 
   const addTask: AppState["addTask"] = (t) => {
-    const newT: Task = { ...t, id: "t" + Date.now(), createdAt: new Date().toISOString(), status: "Assigned" };
+    const newT: Task = {
+      ...t,
+      id: "t" + Date.now(),
+      createdAt: new Date().toISOString(),
+      status: "Assigned",
+    };
     setState((s) => ({ ...s, tasks: [...s.tasks, newT] }));
+    if (isSupabaseConfigured) {
+      insertTask(newT)
+        .then(async (realId) => {
+          if (realId) {
+            const tasks = await loadTasks().catch(() => null);
+            if (tasks) setState((s) => ({ ...s, tasks }));
+          } else {
+            addNotification({
+              title: "Task not saved",
+              body: "Task was added locally but Supabase insert returned no id. Check RLS.",
+              channel: "In-App",
+              type: "alert",
+            });
+          }
+        })
+        .catch((err) => {
+          console.error("Task insert failed", err);
+          addNotification({
+            title: "Task not saved to database",
+            body: err instanceof Error ? err.message : "Unknown error",
+            channel: "In-App",
+            type: "alert",
+          });
+        });
+    }
     _log(currentUser, `Created task "${newT.title}"`, "tasks", newT.id);
   };
 
@@ -783,11 +819,27 @@ export function AppProvider({ children }: { children: ReactNode }) {
       }
       return { ...s, tasks, users };
     });
+    if (snap && isSupabaseConfigured) {
+      updateTaskRow(id, snap as Task)
+        .then(async () => {
+          const tasks = await loadTasks().catch(() => null);
+          if (tasks) setState((s) => ({ ...s, tasks }));
+        })
+        .catch((err) => console.error("Task update failed", err));
+    }
     _log(currentUser, `Updated task`, "tasks", id);
   };
 
   const deleteTask: AppState["deleteTask"] = (id) => {
     setState((s) => ({ ...s, tasks: s.tasks.filter((t) => t.id !== id) }));
+    if (isSupabaseConfigured) {
+      deleteTaskRow(id)
+        .then(async () => {
+          const tasks = await loadTasks().catch(() => null);
+          if (tasks) setState((s) => ({ ...s, tasks }));
+        })
+        .catch((err) => console.error("Task delete failed", err));
+    }
     _log(currentUser, `Deleted task`, "tasks", id);
   };
 
