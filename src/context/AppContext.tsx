@@ -891,6 +891,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
       .catch((e) => console.error(e));
   const refreshFinance = () => loadFinance().then((finance) => setState((s) => ({ ...s, finance }))).catch((e) => console.error(e));
 
+  // FIX: previously, if insertEvent() failed (RLS policy, bad column,
+  // network drop, etc), the error only went to console.error — nothing
+  // told the user. The event stayed visible on screen (optimistic update)
+  // until the next 6s live-sync tick pulled the real list from Supabase,
+  // which didn't contain the never-saved event, so it silently vanished.
+  // Now both failure paths (no id returned, and a thrown error) raise a
+  // visible in-app notification explaining exactly what went wrong, so
+  // you know right away instead of being confused a few seconds later.
   const addEvent: AppState["addEvent"] = (e) => {
     const newE: Event = { ...e, id: "e" + Date.now() };
     beginEventMutation();
@@ -898,12 +906,26 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (isSupabaseConfigured) {
       insertEvent(newE)
         .then(async (realId) => {
-          if (!realId) return;
+          if (!realId) {
+            addNotification({
+              title: "Event not saved",
+              body: `"${newE.title}" was added on screen, but Supabase did not return an id. It will disappear on the next refresh. Check the events table RLS policy.`,
+              channel: "In-App",
+              type: "alert",
+            });
+            return;
+          }
           const events = await loadEvents().catch(() => null);
           if (events) setState((s) => ({ ...s, events: events.length ? events : s.events }));
         })
         .catch((err) => {
           console.error("Event create failed", err);
+          addNotification({
+            title: "Event not saved to database",
+            body: `"${newE.title}" showed on screen but failed to save: ${err instanceof Error ? err.message : "Unknown error"}. It will disappear on the next refresh.`,
+            channel: "In-App",
+            type: "alert",
+          });
         })
         .finally(endEventMutation);
     } else {
@@ -927,6 +949,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
         })
         .catch((err) => {
           console.error("Event update failed", err);
+          addNotification({
+            title: "Event changes not saved",
+            body: `Your edit to "${updated?.title}" failed to save to Supabase: ${err instanceof Error ? err.message : "Unknown error"}`,
+            channel: "In-App",
+            type: "alert",
+          });
         })
         .finally(endEventMutation);
     } else {
@@ -946,6 +974,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
         })
         .catch((err) => {
           console.error("Event delete failed", err);
+          addNotification({
+            title: "Event delete failed",
+            body: `Could not delete the event from Supabase: ${err instanceof Error ? err.message : "Unknown error"}`,
+            channel: "In-App",
+            type: "alert",
+          });
         })
         .finally(endEventMutation);
     } else {
@@ -962,7 +996,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setState((s) => ({ ...s, events: [...s.events, dup] }));
     insertEvent(dup)
       .then(refreshEvents)
-      .catch((err) => console.error("Event duplicate failed", err))
+      .catch((err) => {
+        console.error("Event duplicate failed", err);
+        addNotification({
+          title: "Event duplicate not saved",
+          body: `Copy of "${e.title}" failed to save to Supabase: ${err instanceof Error ? err.message : "Unknown error"}`,
+          channel: "In-App",
+          type: "alert",
+        });
+      })
       .finally(endEventMutation);
     _log(currentUser, `Duplicated event`, "events", id);
   };
@@ -977,7 +1019,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (updated) {
       updateEventRow(id, updated)
         .then(refreshEvents)
-        .catch((err) => console.error("Event archive failed", err))
+        .catch((err) => {
+          console.error("Event archive failed", err);
+          addNotification({
+            title: "Event archive not saved",
+            body: `Archiving "${updated?.title}" failed to save to Supabase: ${err instanceof Error ? err.message : "Unknown error"}`,
+            channel: "In-App",
+            type: "alert",
+          });
+        })
         .finally(endEventMutation);
     } else {
       endEventMutation();
