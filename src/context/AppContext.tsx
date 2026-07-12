@@ -63,6 +63,33 @@ import {
 import { isSupabaseConfigured, supabase, supabaseConfigMessage } from "../lib/supabase";
 import { isSuperAdminEmail } from "../lib/access";
 
+// Supabase/Postgrest errors are plain objects, NOT instances of the JS
+// `Error` class. So `err instanceof Error ? err.message : "Unknown error"`
+// silently threw away the real reason (RLS violation, missing column, bad
+// foreign key, etc) and always showed "Unknown error" for any Supabase
+// failure. This pulls the real message out of whatever shape the error is.
+function getErrorMessage(err: unknown): string {
+  if (err instanceof Error) return err.message;
+  if (typeof err === "string") return err;
+  if (err && typeof err === "object") {
+    const anyErr = err as any;
+    const parts: string[] = [];
+    if (anyErr.message) parts.push(String(anyErr.message));
+    else if (anyErr.error_description) parts.push(String(anyErr.error_description));
+    else if (anyErr.details) parts.push(String(anyErr.details));
+    if (anyErr.hint) parts.push(`hint: ${anyErr.hint}`);
+    if (anyErr.code) parts.push(`code: ${anyErr.code}`);
+    if (parts.length) return parts.join(" — ");
+    try {
+      const json = JSON.stringify(anyErr);
+      if (json && json !== "{}") return json;
+    } catch {
+      // fall through
+    }
+  }
+  return "Unknown error (check browser console for the raw error object)";
+}
+
 interface AppState {
   users: User[];
   tasks: Task[];
@@ -628,7 +655,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           console.error("Member insert failed", error);
           addNotification({
             title: "Member not saved to database",
-            body: `${newUser.name} was added on screen, but saving to Supabase failed: ${error instanceof Error ? error.message : "Unknown error"}`,
+            body: `${newUser.name} was added on screen, but saving to Supabase failed: ${getErrorMessage(error)}`,
             channel: "In-App",
             type: "alert",
           });
@@ -661,7 +688,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           .catch((error) => {
             addNotification({
               title: "Supabase Auth create FAILED",
-              body: `${error instanceof Error ? error.message : "Unknown error"}. Note: the admin function only runs on Vercel deployment, not on local 'npm run dev'.`,
+              body: `${getErrorMessage(error)}. Note: the admin function only runs on Vercel deployment, not on local 'npm run dev'.`,
               channel: "In-App",
               type: "alert",
             });
@@ -818,7 +845,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           console.error("Task insert failed", err);
           addNotification({
             title: "Task not saved to database",
-            body: err instanceof Error ? err.message : "Unknown error",
+            body: getErrorMessage(err),
             channel: "In-App",
             type: "alert",
           });
@@ -922,7 +949,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           console.error("Event create failed", err);
           addNotification({
             title: "Event not saved to database",
-            body: `"${newE.title}" showed on screen but failed to save: ${err instanceof Error ? err.message : "Unknown error"}. It will disappear on the next refresh.`,
+            body: `"${newE.title}" showed on screen but failed to save: ${getErrorMessage(err)}. It will disappear on the next refresh.`,
             channel: "In-App",
             type: "alert",
           });
@@ -951,7 +978,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           console.error("Event update failed", err);
           addNotification({
             title: "Event changes not saved",
-            body: `Your edit to "${updated?.title}" failed to save to Supabase: ${err instanceof Error ? err.message : "Unknown error"}`,
+            body: `Your edit to "${updated?.title}" failed to save to Supabase: ${getErrorMessage(err)}`,
             channel: "In-App",
             type: "alert",
           });
@@ -976,7 +1003,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           console.error("Event delete failed", err);
           addNotification({
             title: "Event delete failed",
-            body: `Could not delete the event from Supabase: ${err instanceof Error ? err.message : "Unknown error"}`,
+            body: `Could not delete the event from Supabase: ${getErrorMessage(err)}`,
             channel: "In-App",
             type: "alert",
           });
@@ -1000,7 +1027,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         console.error("Event duplicate failed", err);
         addNotification({
           title: "Event duplicate not saved",
-          body: `Copy of "${e.title}" failed to save to Supabase: ${err instanceof Error ? err.message : "Unknown error"}`,
+          body: `Copy of "${e.title}" failed to save to Supabase: ${getErrorMessage(err)}`,
           channel: "In-App",
           type: "alert",
         });
@@ -1023,7 +1050,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           console.error("Event archive failed", err);
           addNotification({
             title: "Event archive not saved",
-            body: `Archiving "${updated?.title}" failed to save to Supabase: ${err instanceof Error ? err.message : "Unknown error"}`,
+            body: `Archiving "${updated?.title}" failed to save to Supabase: ${getErrorMessage(err)}`,
             channel: "In-App",
             type: "alert",
           });
